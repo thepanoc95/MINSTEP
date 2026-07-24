@@ -9,6 +9,9 @@
 
 const char *boot1ver = "v1.0.0-rc1";
 
+/* Forward declaration -- implemented in mach.c */
+void jump2mach(void);
+
 #define BOOT1_VERSION boot1ver
 #define MAX_INPUT 1024
 #define PROMPT "boot: "
@@ -70,8 +73,9 @@ void MainPrompt(void)
                 } else {
                     if (strlen(buffer) > 0) {
                         // jump2mach(boot_args("%lld"));
+			            perror("Not Implemented!\n");
                     } else {
-                        // jump2mach();
+                        jump2mach();
                     }
                     break;
                 }
@@ -142,8 +146,6 @@ int main() {
     printf(".......\n");
     size_memory();
     TotalMemCount();
-    getMachineType();
-
     printf("\n");
 
     MainPrompt();

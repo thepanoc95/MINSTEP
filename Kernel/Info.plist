@@ -1,0 +1,13 @@
+{
+    "MXBundle": {
+        "MXBundleName": "MINSTEPOperatingSystemKernelMach",
+        "MXBundleType": "MXBundle.kernel",
+        "MXKernelEntry": "obj.jump2mach()",
+        "MXBundleVersion": "0.1.00-rc1"
+    },
+    "@requires": [
+        "objc1",
+        "posix",
+        "gcc"
+    ]
+}

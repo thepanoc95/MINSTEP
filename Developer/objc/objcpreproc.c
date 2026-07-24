@@ -19,8 +19,7 @@
  *   Class method (+) and instance method (-) definitions
  *   @compatibility_alias
  *
- * Copyright (c) 2026 MinSTEP Project
- * Licensed under the MIT License.
+ * Licensed under the BSD License.
  */
 
 #include <stdio.h>
@@ -42,7 +41,7 @@
 #define MAX_PROTOCOLS  256
 #define MAX_PROPERTIES 1024
 
-#define VERSION "1.0.0"
+#define VERSION "0.20.1-public"
 
 /* Preprocessor-local BOOL type */
 #ifndef BOOL
@@ -1439,6 +1438,39 @@ static void process_source(void)
             break;
         }
 
+        case '/': {
+            int peek_c = peek_char();
+            if (peek_c == '*') {
+                /* Block comment: pass through verbatim */
+                output("/*");
+                read_char(); /* consume '*' */
+                while ((c = read_char()) != EOF) {
+                    if (c == '*') {
+                        int next = peek_char();
+                        if (next == '/') {
+                            output("*/");
+                            read_char(); /* consume '/' */
+                            break;
+                        }
+                        output("*");
+                    } else {
+                        output("%c", c);
+                    }
+                }
+            } else if (peek_c == '/') {
+                /* Line comment: pass through verbatim */
+                output("//");
+                read_char(); /* consume second '/' */
+                while ((c = read_char()) != EOF && c != '\n') {
+                    output("%c", c);
+                }
+                if (c == '\n') output("\n");
+            } else {
+                output("/");
+            }
+            break;
+        }
+
         default: {
             output("%c", c);
             break;
@@ -1454,7 +1486,7 @@ static void process_source(void)
 static void usage(const char *prog)
 {
     fprintf(stderr,
-        "MinSTEP Objective-C Preprocessor v%s\n"
+        "MINSTEP Objective-C v%s\n"
         "Usage: %s [options] <input.m> [...]\n"
         "Options:\n"
         "  -h, --help      Show this help message\n"

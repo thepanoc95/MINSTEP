@@ -1,0 +1,1418 @@
+% ========================================================================
+%  MinSTEP Objective-C Preprocessor
+%  Reference Manual, Version 0.20
+%
+%  Typeset in TeX to evoke the NeXT Computer, Inc. technical
+%  reference manuals of the late 1980s.
+% ========================================================================
+
+\documentclass[11pt,twoside]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage{courier}
+\usepackage{url}
+\usepackage{tabularx}
+\usepackage{longtable}
+\usepackage{fancyhdr}
+
+% -----------------------------------------------------------------------
+%  Page style
+% -----------------------------------------------------------------------
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[LE]{\scshape\small MinSTEP Objective-C Preprocessor}
+\fancyhead[RO]{\scshape\small Reference Manual}
+\fancyfoot[CE]{\small\thepage}
+\fancyfoot[CO]{\small\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+\renewcommand{\footrulewidth}{0pt}
+
+% -----------------------------------------------------------------------
+%  Section formatting (default LaTeX)
+% -----------------------------------------------------------------------
+
+% -----------------------------------------------------------------------
+%  Commands
+% -----------------------------------------------------------------------
+
+\newcommand{\ObjC}{Objective-C}
+\newcommand{\objcc}{{\tt objcc}}
+\newcommand{\libobjcrt}{{\tt libobjcrt}}
+\newcommand{\code}[1]{{\tt #1}}
+\newcommand{\meta}[1]{{\itshape #1}}
+\newcommand{\ie}{{\itshape i.e.}}
+
+% ========================================================================
+
+\begin{document}
+
+% -----------------------------------------------------------------------
+%  Title page
+% -----------------------------------------------------------------------
+
+\thispagestyle{empty}
+\begin{center}
+\vspace*{2in}
+
+{\LARGE\bfseries MinSTEP}\\[0.3in]
+{\large\itshape An Open-Source NeXTSTEP 0.8-like Operating Environment}\\[0.5in]
+{\LARGE\bfseries Objective-C Preprocessor}\\[0.3in]
+{\Large\bfseries Reference Manual}\\[0.8in]
+{\large Version 0.20}\\[0.5in]
+\vfill
+{\large Miguel V.\ Mesquita}\\[0.2in]
+{\large July 2026}
+
+\end{center}
+
+\newpage
+
+% -----------------------------------------------------------------------
+%  Copyright page
+% -----------------------------------------------------------------------
+
+\thispagestyle{empty}
+\vspace*{8in}
+
+\begin{center}
+\small
+Copyright {\copyright} 2026 Miguel V.\ Mesquita.\\
+All rights reserved.
+
+\medskip
+
+This document is part of the MinSTEP project and is distributed
+under the BSD License.
+
+\medskip
+
+MinSTEP is an open-source project inspired by NeXTSTEP 0.8--2.2.\\
+It provides a usermode operating environment with its own kernel
+and Mach IPC.
+
+\medskip
+
+\ObjC\ is a trademark of NeXT, Inc.\\
+NeXT is a trademark of NeXT, Inc.\\
+GCC is a trademark of the Free Software Foundation.
+
+\bigskip
+
+{\bf MinSTEP}\\
+Licensed under the BSD License.
+\end{center}
+
+\newpage
+
+% -----------------------------------------------------------------------
+%  Table of contents
+% -----------------------------------------------------------------------
+
+\tableofcontents
+\newpage
+
+% ========================================================================
+\section{Introduction}
+% ========================================================================
+
+This document describes the MinSTEP Objective-C preprocessor, \objcc,
+and its companion runtime library, \libobjcrt.  Together they comprise
+the MinSTEP Objective-C language toolchain, which translates Objective-C
+source files into standard C for compilation by any ANSI-compliant C
+compiler.
+
+% ========================================================================
+\subsection{Overview}
+% ========================================================================
+
+The MinSTEP Objective-C preprocessor is a source-to-source translator.
+It reads files written in the Objective-C language and emits equivalent
+programs written in pure C.  The generated C code may then be compiled
+by a conventional C compiler such as {\tt gcc} to produce machine code.
+
+The translation model is:
+\begin{center}
+{\tt source.m}~$\longrightarrow$~{\bfseries [objcc]}~$\longrightarrow$~{\tt source.c}~$\longrightarrow$~{\bfseries [cc]}~$\longrightarrow$~{\tt a.out}
+\end{center}
+
+This design preserves the full power of the existing C compilation
+toolchain.  The preprocessor need only handle the additional constructs
+introduced by the Objective-C language; all standard C preprocessing,
+compilation, and linking remain unchanged.
+
+The preprocessor is written in standard C (C99) and compiles on any
+POSIX-conforming system.  It consists of a single source file of
+approximately 1{,}800 lines and requires no external libraries beyond
+the standard C library.
+
+% ========================================================================
+\subsection{The Objective-C Language}
+% ========================================================================
+
+Objective-C is a single-dispatch, dynamically-typed, object-oriented
+programming language.  It extends ANSI C with a small number of new
+syntactic forms:
+
+\begin{itemize}
+  \item Class and category declarations ({\tt @interface},
+        {\tt @implementation})
+  \item Protocol declarations ({\tt @protocol})
+  \item Message expressions ({\tt [receiver selector:argument]})
+  \item Instance variable declarations within class definitions
+  \item Class methods ({\tt +}) and instance methods ({\tt -})
+  \item Dynamic type queries ({\tt @selector}, {\tt @encode})
+  \item Automatic property synthesis ({\tt @property},
+        {\tt @synthesize})
+\end{itemize}
+
+All other constructs are standard C.  The preprocessor's task is
+therefore modest: it must recognize the Objective-C extensions, emit C
+code of equivalent semantics, and pass all remaining C source text
+through unchanged.
+
+% ========================================================================
+\subsection{Notation}
+% ========================================================================
+
+In this manual, monospaced text ({\tt like this}) indicates language
+constructs, filenames, or command-line syntax.  Nonterminal names in
+the grammatical descriptions are shown in {\itshape italics}.
+
+% ========================================================================
+\newpage
+\section{Using the Preprocessor}
+% ========================================================================
+
+% ========================================================================
+\subsection{Invocation}
+% ========================================================================
+
+The preprocessor is invoked as:
+\begin{quote}
+{\tt objcc} {\meta{options}} {\meta{file.m}} [{\meta{file2.m}~\ldots}]
+\end{quote}
+
+The following options are recognized:
+
+\medskip
+\noindent
+\begin{tabularx}{\textwidth}{lX}
+{\tt -E} & Preprocess only.  The translated C source is written to the
+           standard output, or to the file named by {\tt -o}. \\[4pt]
+{\tt -c} & Compile to an object file.  The preprocessor output is
+           passed to the C compiler with the {\tt -c} flag.  This is
+           the default mode when no output file is specified. \\[4pt]
+{\tt -S} & Compile to assembly language.  The preprocessor output is
+           passed to the C compiler with the {\tt -S} flag. \\[4pt]
+{\tt -o} {\meta{file}}
+         & Write output to {\meta{file}}.  The output mode is inferred
+           from the extension of {\meta{file}}:
+           \begin{itemize}
+             \setlength{\itemsep}{0pt}
+             \setlength{\parskip}{0pt}
+             \item {\tt .c} $\rightarrow$ preprocess only ({\tt -E})
+             \item {\tt .o} $\rightarrow$ compile to object ({\tt -c})
+             \item {\tt .s} $\rightarrow$ compile to assembly ({\tt -S})
+             \item otherwise $\rightarrow$ compile and link
+           \end{itemize} \\[4pt]
+{\tt -I} {\meta{dir}}
+         & Add {\meta{dir}} to the include search path.  This path is
+           used by both the preprocessor's {\tt \#import} directive and
+           the underlying C compiler. \\[4pt]
+{\tt -D} {\meta{name=val}}
+         & Define a C preprocessor macro.  Passed through to the C
+           compiler unchanged. \\[4pt]
+{\tt -L} {\meta{dir}}
+         & Add {\meta{dir}} to the library search path.  Passed to the
+           linker. \\[4pt]
+{\tt -l} {\meta{lib}}
+         & Link against library {\meta{lib}}.  Passed to the linker.
+           \\[4pt]
+{\tt -W} {\meta{flag}}
+         & Pass a warning flag to the C compiler. \\[4pt]
+{\tt -std=} {\meta{std}}
+         & Pass a language standard flag to the C compiler. \\[4pt]
+{\tt -g}  & Include debugging symbols. \\[4pt]
+{\tt -O} {\meta{n}}
+         & Set optimization level {\meta{n}}. \\[4pt]
+{\tt -f} {\meta{flag}}
+         & Pass an arbitrary flag to the C compiler. \\[4pt]
+{\tt -h}, {\tt --help}
+         & Display a usage summary and exit. \\[4pt]
+{\tt -v}, {\tt --version}
+         & Display the version number and exit. \\
+\end{tabularx}
+
+% ========================================================================
+\subsection{Environment}
+% ========================================================================
+
+The C compiler used for the {\tt -c}, {\tt -S}, and link modes is
+determined by the following search:
+
+\begin{enumerate}
+  \item The {\tt OBJCC\_CC} environment variable, if set.
+  \item The {\tt CC} environment variable, if set.
+  \item The string {\tt ``gcc''}, as a final default.
+\end{enumerate}
+
+The include search path may be extended by multiple {\tt -I} flags.
+These paths are searched in order after the current directory when
+resolving {\tt \#import} and {\tt \#include} directives with quoted
+filenames.
+
+% ========================================================================
+\subsection{Examples}
+% ========================================================================
+
+Preprocess a single file and examine the output:
+\begin{quote}
+{\tt \$ objcc -E MyClass.m -o MyClass.c}
+\end{quote}
+
+Compile an Objective-C source file to an object file:
+\begin{quote}
+{\tt \$ objcc -c MyClass.m -o MyClass.o}
+\end{quote}
+
+Compile and link a complete program:
+\begin{quote}
+{\tt \$ objcc -o myapp main.m MyClass.m -lobjcrt}
+\end{quote}
+
+Compile with a custom include path:
+\begin{quote}
+{\tt \$ objcc -I /usr/local/include/objc -c main.m}
+\end{quote}
+
+% ========================================================================
+\newpage
+\section{Objective-C Source Language Constructs}
+% ========================================================================
+
+This section describes each Objective-C construct as it is translated
+by the preprocessor.  For each construct, the input syntax and the
+generated C output are given.
+
+% ========================================================================
+\subsection{Class Declarations}
+% ========================================================================
+
+An Objective-C class is declared with the {\tt @interface} directive.
+The full syntax is:
+\begin{quote}
+{\tt @interface} {\meta{ClassName}} [: {\meta{SuperclassName}} [{\meta{ProtocolName,~\ldots}}]]\\
+\{\\
+\quad {\meta{ivar-declarations}}\\
+\}\\
+{\meta{method-declarations}}\\
+{\tt @end}
+\end{quote}
+
+The preprocessor emits a C {\tt struct} whose first member is an {\tt isa}
+pointer to the class metaclass and whose second member is a pointer to the
+superclass struct.  Instance variables follow.
+
+{\bf Input:}
+\begin{quote}
+\begin{verbatim}
+@interface Rectangle : Shape
+{
+    int width;
+    int height;
+    @protected
+    id fillColor;
+}
+- (int)area;
+@end
+\end{verbatim}
+\end{quote}
+
+{\bf Output:}
+\begin{quote}
+\begin{verbatim}
+struct _Rectangle_class_t;
+struct Rectangle {
+    struct _Rectangle_class_t *isa;
+    struct Shape *_super;
+    int width;
+    int height;
+    /* @protected */
+    id fillColor;
+};
+typedef struct Rectangle Rectangle;
+- (int)Rectangle_inst_area_(id self, SEL _cmd);
+\end{verbatim}
+\end{quote}
+
+The {\tt isa} and {\tt \_super} pointers are always present, even for
+root classes.  The visibility keywords {\tt @public}, {\tt @protected},
+{\tt @private}, and {\tt @package} are converted to C comments;
+visibility is not enforced at the C level but is recorded for the
+runtime.
+
+% ========================================================================
+\subsection{Forward Class Declarations}
+% ========================================================================
+
+The {\tt @class} directive introduces a forward declaration:
+\begin{quote}
+{\tt @class} {\meta{ClassName}};
+\end{quote}
+
+This is translated to a C forward struct declaration:
+\begin{quote}
+{\tt struct} {\meta{ClassName}}; \hfill {\tt /* forward class declaration */}
+\end{quote}
+
+The class name is also recorded internally so that subsequent
+{\tt @interface} declarations for the same class are not duplicated.
+
+% ========================================================================
+\subsection{Implementations}
+% ========================================================================
+
+The {\tt @implementation} directive marks the beginning of a class
+implementation:
+\begin{quote}
+{\tt @implementation} {\meta{ClassName}} [({\meta{CategoryName}})]\\
+{\meta{method-definitions}}\\
+{\tt @end}
+\end{quote}
+
+When a category name is present in parentheses, the preprocessor enters
+category mode and records both the class and category names.  Method
+definitions within the implementation block are translated as described
+in Section~5.4.
+
+{\bf Input:}
+\begin{quote}
+\begin{verbatim}
+@implementation MyClass
+\end{verbatim}
+\end{quote}
+
+{\bf Output:}
+\begin{quote}
+\begin{verbatim}
+/* @implementation MyClass */
+\end{verbatim}
+\end{quote}
+
+% ========================================================================
+\subsection{Protocols}
+% ========================================================================
+
+A protocol declares an interface that classes may adopt:
+\begin{quote}
+{\tt @protocol} {\meta{ProtocolName}} [{\tt <}{\meta{SuperProtocol}}{\tt >}]\\
+{\meta{method-declarations}}\\
+{\tt @end}
+\end{quote}
+
+The preprocessor emits a static {\tt Protocol} pointer:
+\begin{quote}
+{\tt static Protocol}~{\tt *}{\tt \_proto\_}{\meta{ProtocolName}}~{\tt = NULL;}
+\end{quote}
+
+Protocol inheritance is parsed but not expanded; the superclass
+relationship is recorded for the runtime to resolve.
+
+% ========================================================================
+\subsection{Categories}
+% ========================================================================
+
+A category adds methods to an existing class.  The syntax is:
+\begin{quote}
+\begin{tabular}{l}
+{\tt @interface} {\meta{ClassName}} ({\meta{CategoryName}})\\
+{\meta{method-declarations}}\\
+{\tt @end}
+\end{tabular}
+\end{quote}
+\begin{quote}
+\begin{tabular}{l}
+{\tt @implementation} {\meta{ClassName}} ({\meta{CategoryName}})\\
+{\meta{method-definitions}}\\
+{\tt @end}
+\end{tabular}
+\end{quote}
+
+The preprocessor tracks the category name separately from the class
+name.  Method definitions in a category implementation are translated
+with the category class name, allowing the runtime to associate the
+methods with the correct class.
+
+% ========================================================================
+\subsection{Property Declarations}
+% ========================================================================
+
+The {\tt @property} directive declares a property with optional attribute
+specifiers:
+\begin{quote}
+{\tt @property} ({\meta{attributes}}) {\meta{Type}} {\meta{name}};
+\end{quote}
+
+The following attributes are recognized:
+
+\medskip
+\noindent
+\begin{tabularx}{\textwidth}{lX}
+{\tt readonly}     & The property has no setter. \\
+{\tt readwrite}    & The property has both getter and setter (default). \\
+{\tt nonatomic}    & The setter is not atomic. \\
+{\tt retain}       & The setter retains the assigned value. \\
+{\tt copy}         & The setter copies the assigned value. \\
+{\tt assign}       & The setter assigns directly (default). \\
+{\tt getter=} {\meta{name}}
+                   & Use {\meta{name}} for the getter method. \\
+{\tt setter=} {\meta{name}}{\tt :}
+                   & Use {\meta{name}}{\tt :} for the setter method. \\
+\end{tabularx}
+
+The preprocessor emits declarations for the getter and setter methods:
+
+{\bf Input:}
+\begin{quote}
+\begin{verbatim}
+@property (nonatomic, retain) NSString *name;
+\end{verbatim}
+\end{quote}
+
+{\bf Output:}
+\begin{quote}
+\begin{verbatim}
+/* @property (nonatomic, retain) */
+- (NSString *)name;
+- (void)setName:(NSString *)value;
+\end{verbatim}
+\end{quote}
+
+For readonly properties, only the getter is emitted.
+
+{\bf Input:}
+\begin{quote}
+\begin{verbatim}
+@property (readonly) int count;
+\end{verbatim}
+\end{quote}
+
+{\bf Output:}
+\begin{quote}
+\begin{verbatim}
+/* @property (readonly) */
+- (int)count;
+\end{verbatim}
+\end{quote}
+
+% ========================================================================
+\subsection{Property Synthesis}
+% ========================================================================
+
+The {\tt @synthesize} directive requests automatic generation of getter
+and setter implementations:
+\begin{quote}
+{\tt @synthesize} {\meta{name}} = {\meta{\_name}};
+\end{quote}
+
+The preprocessor looks up the property declared in the current class
+and emits the corresponding method bodies:
+\begin{quote}
+\begin{verbatim}
+- (NSString *)name {
+    return self->_name;
+}
+- (void)setName:(NSString *)value {
+    self->_name = value;
+}
+\end{verbatim}
+\end{quote}
+
+If the property is readonly, only the getter is generated.  The ivar
+name may be customized with the {\tt =} syntax; if omitted, the property
+name prefixed with an underscore is used.
+
+The {\tt @dynamic} directive suppresses synthesis and emits a comment:
+\begin{quote}
+{\tt @dynamic} {\meta{name}};
+\end{quote}
+which produces:
+\begin{quote}
+{\tt /* @dynamic} {\meta{name}} {\tt - provided at runtime */}
+\end{quote}
+
+% ========================================================================
+\subsection{Method Declarations}
+% ========================================================================
+
+Methods are declared with a leading {\tt +} (class method) or {\tt -}
+(instance method), followed by a type specification and selector:
+\begin{quote}
+{\tt +} ({\meta{ReturnType}}) {\meta{methodName}}:({\meta{ArgType}}) {\meta{argument}};\\
+{\tt -} ({\meta{ReturnType}}) {\meta{methodName}}:({\meta{ArgType}}) {\meta{argument}};
+\end{quote}
+
+Multi-keyword selectors are supported:
+\begin{quote}
+{\tt -} ({\tt id}) {\tt initWithFoo:}({\tt int}) {\tt foo} {\tt bar:}({\tt id}) {\tt bar};
+\end{quote}
+
+Each keyword-argument pair introduces a new parameter.  If an argument
+type is omitted, {\tt id} is assumed.
+
+The preprocessor translates method names to a flat C naming convention.
+The class name, a discriminator ({\tt inst} or {\tt cls}), the method
+name, and each argument label are joined with underscores.  A trailing
+underscore terminates the name.
+
+The naming rules are:
+\begin{quote}
+\begin{tabular}{ll}
+Instance method: & {\tt ClassName\_inst\_methodName\_}({\tt id self}, {\tt SEL \_cmd}, \\
+                 & \quad {\meta{ArgType arg}}, \ldots) \\[4pt]
+Class method:    & {\tt ClassName\_cls\_methodName\_}({\tt Class cls}, {\tt SEL \_cmd}, \\
+                 & \quad {\meta{ArgType arg}}, \ldots) \\
+\end{tabular}
+\end{quote}
+
+Examples:
+
+\medskip
+\noindent
+\begin{tabular}{ll}
+{\tt - (int)area}
+  & becomes {\tt int Rectangle\_inst\_area\_(id self, SEL \_cmd)} \\[4pt]
+{\tt - (id)initWithX:(int)x y:(int)y}
+  & becomes {\tt id Rectangle\_inst\_initWithX\_y\_(id self, SEL \_cmd, int x, int y)}
+  \\[4pt]
+{\tt + (id)alloc}
+  & becomes {\tt id Rectangle\_cls\_alloc\_(Class cls, SEL \_cmd)} \\
+\end{tabular}
+
+The first two parameters of every instance method implementation are
+always {\tt self} (of type {\tt id}) and {\tt \_cmd} (of type {\tt SEL}).
+Class methods receive {\tt cls} (of type {\tt Class}) and {\tt \_cmd}
+instead.
+
+% ========================================================================
+\subsection{Method Definitions}
+% ========================================================================
+
+A method definition includes the full method body:
+\begin{quote}
+\begin{verbatim}
+- (int)area {
+    return width * height;
+}
+\end{verbatim}
+\end{quote}
+
+Within the method body, the preprocessor applies the following
+transformations:
+
+\begin{enumerate}
+  \item The method is emitted as a C function with the naming
+        convention described in Section~5.4.
+
+  \item For instance methods, the implicit {\tt self} parameter is
+        re-declared and cast to the class struct type:
+        \begin{quote}
+        {\tt struct Rectangle *self = (struct Rectangle *)\_obj;}
+        \end{quote}
+        This allows direct ivar access within the method body.
+
+  \item Message expressions are translated to runtime calls
+        (see Section~5.6).
+
+  \item Bare ivar references of the form {\tt \_name} are rewritten to
+        {\tt self->\_name} (see Section~5.7).
+
+  \item {\tt @selector()} and {\tt @encode()} expressions are translated
+        (see Sections~5.8 and~5.9).
+
+  \item {\tt @autoreleasepool} blocks are expanded (see Section~5.10).
+\end{enumerate}
+
+% ========================================================================
+\subsection{Message Expressions}
+% ========================================================================
+
+The primary mechanism for method invocation in Objective-C is the
+message expression:
+\begin{quote}
+{\tt [}{\meta{receiver}} {\meta{selector}}: {\meta{argument}}{\tt ]}
+\end{quote}
+
+The preprocessor translates each message expression to a call to
+{\tt objc\_msgSend()} or, for {\tt super} receivers,
+{\tt objc\_msgSendSuper()}.
+
+{\bf Input:}
+\begin{quote}
+{\tt [self draw];}
+\end{quote}
+
+{\bf Output:}
+\begin{quote}
+{\tt objc\_msgSend(self, sel\_registerName("draw"));}
+\end{quote}
+
+{\bf Input:}
+\begin{quote}
+{\tt [rect initWithX:10 y:20];}
+\end{quote}
+
+{\bf Output:}
+\begin{quote}
+{\tt objc\_msgSend(rect, sel\_registerName("initWithX:y:"), 10, 20);}
+\end{quote}
+
+Multi-keyword selectors are concatenated: the selector
+{\tt initWithFoo:bar:} becomes the string {\tt ``initWithFoo:bar:''}.
+
+% -----------------------------------------------------------------------
+\subsubsection{Super Messages}
+% -----------------------------------------------------------------------
+
+When the receiver is the keyword {\tt super}, the message is dispatched
+to the superclass implementation:
+
+{\bf Input:}
+\begin{quote}
+{\tt [super draw];}
+\end{quote}
+
+{\bf Output:}
+\begin{quote}
+\begin{verbatim}
+objc_msgSendSuper(self,
+    class_getSuperclass(objc_getClass("Rectangle")),
+    sel_registerName("draw"));
+\end{verbatim}
+\end{quote}
+
+% -----------------------------------------------------------------------
+\subsubsection{Class Messages}
+% -----------------------------------------------------------------------
+
+When the receiver is a class name (identified by a leading uppercase
+letter), it is resolved at runtime:
+
+{\bf Input:}
+\begin{quote}
+{\tt [Rectangle alloc];}
+\end{quote}
+
+{\bf Output:}
+\begin{quote}
+\begin{verbatim}
+objc_msgSend((id)objc_getClass("Rectangle"),
+    sel_registerName("alloc"));
+\end{verbatim}
+\end{quote}
+
+% -----------------------------------------------------------------------
+\subsubsection{Nested Expressions}
+% -----------------------------------------------------------------------
+
+Message expressions may be nested arbitrarily:
+
+{\bf Input:}
+\begin{quote}
+{\tt [self initWithFrame:[NSScreen mainScreen]];}
+\end{quote}
+
+{\bf Output:}
+\begin{quote}
+\begin{verbatim}
+objc_msgSend(self,
+    sel_registerName("initWithFrame:"),
+    objc_msgSend((id)objc_getClass("NSScreen"),
+        sel_registerName("mainScreen")));
+\end{verbatim}
+\end{quote}
+
+% -----------------------------------------------------------------------
+\subsubsection{Heuristic Validation}
+% -----------------------------------------------------------------------
+
+Not every bracket expression in Objective-C source is a message
+expression.  Array subscripts, for example, also use brackets:
+\begin{quote}
+{\tt int x = array[index];}
+\end{quote}
+
+The preprocessor applies a set of heuristic tests to distinguish message
+expressions from C bracket expressions:
+
+\begin{itemize}
+  \item The receiver must begin with a letter or underscore.
+  \item The selector must contain at least one alphabetic character.
+  \item The receiver must not be a numeric literal.
+\end{itemize}
+
+When these tests fail, the bracket expression is passed through
+unchanged to the C compiler.
+
+% ========================================================================
+\subsection{Implicit {\tt self} for Ivar Access}
+% ========================================================================
+
+Within instance method bodies, identifiers beginning with an underscore
+that are not part of a larger expression are automatically rewritten to
+reference {\tt self}.
+
+{\bf Input:}
+\begin{quote}
+\begin{verbatim}
+- (int)area {
+    return _width * _height;
+}
+\end{verbatim}
+\end{quote}
+
+{\bf Output:}
+\begin{quote}
+\begin{verbatim}
+int Rectangle_inst_area_(id self, SEL _cmd) {
+    struct Rectangle *self = (struct Rectangle *)self;
+    return self->_width * self->_height;
+}
+\end{verbatim}
+\end{quote}
+
+This rewrite applies only when the underscore-prefixed identifier
+appears at the beginning of a new token---after whitespace, operators,
+or the start of a line.  Identifiers such as {\tt my\_width} are not
+affected.
+
+The rewrite does not apply to class methods, which have no instance
+context.
+
+% ========================================================================
+\subsection{Selector Expressions}
+% ========================================================================
+
+The {\tt @selector()} expression produces a selector value at compile
+time:
+\begin{quote}
+{\tt @selector(}{\meta{methodName}}{\tt )}
+\end{quote}
+
+This is translated to a runtime call:
+\begin{quote}
+{\tt sel\_registerName(}{\meta{"methodName"}}{\tt )}
+\end{quote}
+
+Multi-word selectors are handled correctly:
+\begin{quote}
+\begin{tabular}{ll}
+{\tt @selector(initWithFoo:bar:)}
+  & becomes {\tt sel\_registerName("initWithFoo:bar:")} \\
+\end{tabular}
+\end{quote}
+
+The selector name is trimmed of trailing whitespace.
+
+% ========================================================================
+\subsection{Encode Expressions}
+% ========================================================================
+
+The {\tt @encode()} expression yields a string containing the type
+encoding of the given type:
+\begin{quote}
+\begin{tabular}{ll}
+{\tt @encode(int)}
+  & becomes {\tt "int"} \\[4pt]
+{\tt @encode(NSString *)}
+  & becomes {\tt "NSString *"} \\
+\end{tabular}
+\end{quote}
+
+Nested parenthesized types are handled:
+\begin{quote}
+\begin{tabular}{ll}
+{\tt @encode(struct \{ int x; \})}
+  & becomes {\tt "struct \{ int x; \}"} \\
+\end{tabular}
+\end{quote}
+
+% ========================================================================
+\subsection{Autorelease Pools}
+% ========================================================================
+
+The {\tt @autoreleasepool} directive provides scoped memory management:
+\begin{quote}
+\begin{verbatim}
+@autoreleasepool {
+    id obj = [[NSObject alloc] init];
+}
+\end{verbatim}
+\end{quote}
+
+This is expanded to an explicit push/pop pair:
+\begin{quote}
+\begin{verbatim}
+{ /* @autoreleasepool */
+    void *_objc_apool = objc_autoreleasePoolPush();
+    { /* @autoreleasepool */
+        id obj = objc_msgSend(
+            objc_msgSend((id)objc_getClass("NSObject"),
+                sel_registerName("alloc")),
+            sel_registerName("init"));
+    }
+    objc_autoreleasePoolPop(_objc_apool);
+}
+\end{verbatim}
+\end{quote}
+
+% ========================================================================
+\subsection{Compatibility Aliases}
+% ========================================================================
+
+The {\tt @compatibility\_alias} directive introduces an alternative name
+for an existing class:
+\begin{quote}
+{\tt @compatibility\_alias} {\meta{AliasName}} {\meta{OriginalName}};
+\end{quote}
+
+This is translated to a preprocessor macro:
+\begin{quote}
+{\tt \#define} {\meta{AliasName}} {\meta{OriginalName}} \hfill
+  {\tt /* @compatibility\_alias */}
+\end{quote}
+
+% ========================================================================
+\subsection{Access Control Keywords}
+% ========================================================================
+
+The following keywords control ivar and method visibility:
+
+\medskip
+\noindent
+\begin{tabularx}{\textwidth}{lX}
+{\tt @public}    & Ivars are accessible from any code. \\
+{\tt @protected} & Ivars are accessible within the class and subclasses. \\
+{\tt @private}   & Ivars are accessible only within the class. \\
+{\tt @package}   & Ivars are accessible within the same framework. \\
+\end{tabularx}
+
+These keywords are converted to C comments in the preprocessor output.
+Visibility enforcement is provided by the runtime.
+
+Similarly, {\tt @optional} and {\tt @required} (used in protocol
+declarations) are converted to comments.
+
+% ========================================================================
+\subsection{Exception Handling}
+% ========================================================================
+
+The preprocessor provides partial support for exception handling:
+\begin{quote}
+\begin{verbatim}
+@try {
+    ...
+}
+@catch (id exception) {
+    ...
+}
+@finally {
+    ...
+}
+\end{verbatim}
+\end{quote}
+
+The {\tt @throw} expression is translated to:
+\begin{quote}
+{\tt objc\_exception\_throw(}{\meta{expression}}{\tt )}
+\end{quote}
+
+The {\tt @try}, {\tt @catch}, and {\tt @finally} blocks are currently
+emitted as C block structures with comment annotations.  Full exception
+handling support requires the runtime's {\tt longjmp}-based exception
+mechanism (see the \libobjcrt\ documentation).
+
+% ========================================================================
+\newpage
+\section{C Preprocessor Directives}
+% ========================================================================
+
+% ========================================================================
+\subsection{{\tt \#import} and {\tt \#include}}
+% ========================================================================
+
+The preprocessor provides special handling for {\tt \#import} and
+{\tt \#include} directives with quoted filenames:
+\begin{quote}
+{\tt \#import "MyClass.h"}\\
+{\tt \#include "MyClass.h"}
+\end{quote}
+
+When a quoted filename is given, the preprocessor opens the file and
+recursively preprocesses its contents inline.  This provides the
+semantics of {\tt \#import} (inclusion without re-inclusion) even for
+files that do not contain their own include guards.
+
+Include guard tracking prevents a file from being processed more than
+once.  Up to 64 unique filenames may be tracked.
+
+For angle-bracket includes, the standard behavior is preserved:
+\begin{quote}
+{\tt \#import <Foundation/Foundation.h>}
+\end{quote}
+
+This is passed through as a standard {\tt \#include} directive for the C
+compiler to resolve using its own search path.
+
+Include path search: when a quoted {\tt \#import} fails to open relative
+to the current directory, the paths specified by {\tt -I} flags are
+searched in order.
+
+% ========================================================================
+\subsection{The {\tt \#objc} Directive}
+% ========================================================================
+
+The {\tt \#objc} directive is a MinSTEP extension for including the
+Objective-C standard library:
+\begin{quote}
+{\tt \#objc}
+\end{quote}
+
+When invoked without an argument, this includes the root header
+{\tt objc/objc.h}, which declares the {\tt Object} base class and
+standard Foundation types.
+
+\begin{quote}
+{\tt \#objc} {\meta{MyClass.h}}
+\end{quote}
+
+When invoked with a path argument, the specified file is recursively
+preprocessed.
+
+% ========================================================================
+\subsection{Standard C Directives}
+% ========================================================================
+
+All standard C preprocessor directives are passed through to the
+underlying C compiler without interpretation:
+
+\medskip
+\noindent
+\begin{tabularx}{\textwidth}{lX}
+{\tt \#define}   & Define a macro. \\
+{\tt \#undef}    & Undefine a macro. \\
+{\tt \#if}       & Begin conditional compilation. \\
+{\tt \#ifdef}    & Test whether a macro is defined. \\
+{\tt \#ifndef}   & Test whether a macro is not defined. \\
+{\tt \#elif}     & Else-if conditional branch. \\
+{\tt \#else}     & Else conditional branch. \\
+{\tt \#endif}    & End conditional compilation. \\
+{\tt \#pragma}   & Compiler-specific directives. \\
+{\tt \#error}    & Emit a compilation error. \\
+{\tt \#warning}  & Emit a compilation warning. \\
+{\tt \#line}     & Override line number information. \\
+\end{tabularx}
+
+The preprocessor does not expand macros, evaluate constant expressions,
+or perform token pasting.  These tasks are left to the C compiler.
+
+% ========================================================================
+\newpage
+\section{The Runtime Library}
+% ========================================================================
+
+% ========================================================================
+\subsection{Overview}
+% ========================================================================
+
+The MinSTEP runtime library, \libobjcrt, provides the runtime support
+required by Objective-C programs.  It is written in pure C and linkable
+with any ANSI C compiler.
+
+The runtime provides:
+
+\begin{itemize}
+  \item Dynamic class registration and lookup
+  \item Message dispatch ({\tt objc\_msgSend})
+  \item Selector registration and lookup
+  \item Protocol management
+  \item Manual reference counting ({\tt retain}/{\tt release}/
+        {\tt autorelease})
+  \item Autorelease pool management
+  \item Exception handling primitives
+  \item Property and instance variable metadata
+\end{itemize}
+
+The runtime is initialized automatically at load time via a constructor
+function; no explicit initialization call is required.
+
+% ========================================================================
+\subsection{Message Dispatch}
+% ========================================================================
+
+All Objective-C method calls are routed through the dispatch function:
+\begin{quote}
+{\tt id objc\_msgSend(id self, SEL \_cmd, ...)}
+\end{quote}
+
+The runtime locates the method implementation for the given receiver and
+selector by walking the class hierarchy.  If the method is not found, the
+{\tt forwardInvocation:} handler is invoked.
+
+For super messages, a separate function is provided:
+\begin{quote}
+\begin{tabular}{l}
+{\tt id objc\_msgSendSuper(id self, struct objc\_class *superclass,}\\
+\quad {\tt SEL \_cmd, ...)}
+\end{tabular}
+\end{quote}
+
+This dispatches the message starting from the given superclass,
+bypassing the receiver's own class.
+
+% ========================================================================
+\subsection{Class and Selector Registry}
+% ========================================================================
+
+Classes are registered at load time via
+{\tt objc\_allocateClassPair()} or the {\tt @implementation} directive.
+The runtime maintains a hash table of all registered classes, indexed by
+name.
+
+Selectors are interned strings.  The {\tt sel\_registerName()} function
+returns the unique {\tt SEL} value for a given selector name string.
+Multiple calls with the same name return the same pointer value, allowing
+pointer comparison for selector equality.
+
+% ========================================================================
+\subsection{Memory Management}
+% ========================================================================
+
+The MinSTEP runtime implements manual reference counting (MRC).  Each
+object's reference count is tracked in an internal hash table.
+
+\medskip
+\noindent
+\begin{tabularx}{\textwidth}{lX}
+{\tt id objc\_retain(id obj)}
+  & Increment the reference count. \\[4pt]
+{\tt id objc\_release(id obj)}
+  & Decrement the reference count; deallocate at zero. \\[4pt]
+{\tt id objc\_autorelease(id obj)}
+  & Register {\tt obj} for release at the end of the current autorelease
+    pool scope. \\
+\end{tabularx}
+
+Autorelease pools are managed with push/pop pairs:
+\begin{quote}
+\begin{tabular}{l}
+{\tt void *objc\_autoreleasePoolPush(void)}\\
+{\tt void\ \ objc\_autoreleasePoolPop(void *pool)}
+\end{tabular}
+\end{quote}
+
+When compiled with ARC (Automatic Reference Counting), the
+{\tt retain}/{\tt release}/{\tt autorelease} calls are omitted; the
+compiler inserts them automatically.  The runtime detects ARC
+compilation via the {\tt \_\_has\_feature(objc\_arc)} preprocessor test.
+
+% ========================================================================
+\subsection{Instance Variables}
+% ========================================================================
+
+Instance variables are laid out in the class struct immediately after
+the {\tt isa} and {\tt \_super} pointers.  The runtime provides
+functions for accessing ivars by name:
+
+\medskip
+\noindent
+\begin{tabularx}{\textwidth}{lX}
+{\tt Ivar class\_getInstanceVariable(Class cls, const char *name)}
+  & Look up an ivar by name. \\[4pt]
+{\tt id object\_getIvar(id obj, Ivar ivar)}
+  & Read an ivar value. \\[4pt]
+{\tt void object\_setIvar(id obj, Ivar ivar, id value)}
+  & Write an ivar value. \\
+\end{tabularx}
+
+The preprocessor's {\tt self->\_name} rewriting (Section~5.7) provides
+direct struct access, which is more efficient than the runtime ivars API
+for compile-time-known ivars.
+
+% ========================================================================
+\subsection{Protocols}
+% ========================================================================
+
+Protocols are registered with the runtime and may be queried at runtime:
+
+\medskip
+\noindent
+\begin{tabularx}{\textwidth}{lX}
+{\tt Protocol *objc\_allocateProtocol(const char *name)}
+  & Allocate a new protocol. \\[4pt]
+{\tt void objc\_registerProtocol(Protocol *proto)}
+  & Register an allocated protocol. \\[4pt]
+{\tt Protocol *objc\_getProtocol(const char *name)}
+  & Look up a registered protocol by name. \\
+\end{tabularx}
+
+Classes adopt protocols via the runtime's class registration API.  The
+preprocessor emits {\tt Protocol} pointer variables for each
+{\tt @protocol} declaration; the runtime initializes these at load time.
+
+% ========================================================================
+\newpage
+\section{Building the Toolchain}
+% ========================================================================
+
+% ========================================================================
+\subsection{Prerequisites}
+% ========================================================================
+
+Building the MinSTEP Objective-C toolchain requires:
+
+\begin{itemize}
+  \item A C99-conforming compiler ({\tt gcc} or {\tt clang})
+  \item GNU make
+  \item Standard POSIX utilities
+\end{itemize}
+
+No external libraries are required beyond the C standard library and the
+POSIX runtime.
+
+% ========================================================================
+\subsection{Build Commands}
+% ========================================================================
+
+To build the entire toolchain:
+\begin{quote}
+{\tt \$ make}
+\end{quote}
+
+This produces:
+\begin{itemize}
+  \item {\tt objcc} \quad The preprocessor executable.
+  \item {\tt build/libobjcrt.a} \quad The runtime static library.
+\end{itemize}
+
+To build individual components:
+\begin{quote}
+{\tt \$ make objcc} \quad\quad Build only the preprocessor.\\
+{\tt \$ make libobjcrt} \quad Build only the runtime library.
+\end{quote}
+
+To install:
+\begin{quote}
+{\tt \$ make install PREFIX=/usr/local}
+\end{quote}
+
+This installs:
+\begin{quote}
+\begin{tabular}{ll}
+{\tt /usr/local/bin/objcc} & The preprocessor. \\
+{\tt /usr/local/lib/libobjcrt.a} & Runtime static library. \\
+{\tt /usr/local/lib/libobjcrt.o} & Runtime object file. \\
+{\tt /usr/local/include/objc/objc.h} & Standard library header. \\
+{\tt /usr/local/include/objc/objcrt.h} & Runtime API header. \\
+\end{tabular}
+\end{quote}
+
+% ========================================================================
+\subsection{Linking}
+% ========================================================================
+
+To link an Objective-C program:
+\begin{quote}
+{\tt \$ objcc -o myapp main.m -lobjcrt}
+\end{quote}
+
+If the runtime is installed in a non-standard location:
+\begin{quote}
+{\tt \$ objcc -L /opt/minstep/lib -l objcrt -o myapp main.m}
+\end{quote}
+
+% ========================================================================
+\newpage
+\section{Error Handling}
+% ========================================================================
+
+% ========================================================================
+\subsection{Diagnostics}
+% ========================================================================
+
+The preprocessor emits error messages to the standard error output when
+it encounters conditions it cannot handle:
+
+\begin{itemize}
+  \item Unterminated string literals or comments.
+  \item Unbalanced braces within method definitions.
+  \item {\tt @end} encountered without a matching {\tt @interface} or
+        {\tt @implementation}.
+  \item File not found for {\tt \#import} or {\tt \#include} directives.
+\end{itemize}
+
+Error messages include the input filename and line number:
+\begin{quote}
+{\tt MyClass.m:42: error: unterminated string literal}
+\end{quote}
+
+The preprocessor continues processing after errors when possible,
+emitting as much valid output as it can.
+
+% ========================================================================
+\newpage
+\section{Implementation Notes}
+% ========================================================================
+
+% ========================================================================
+\subsection{Translation Strategy}
+% ========================================================================
+
+The preprocessor operates as a character-level stream processor.  It
+does not construct an abstract syntax tree or token stream.  Instead, it
+reads characters one at a time and dispatches on trigger characters:
+
+\medskip
+\noindent
+\begin{tabular}{ll}
+{\tt \#} & $\rightarrow$ C preprocessor directive \\
+{\tt @} & $\rightarrow$ Objective-C keyword or expression \\
+{\tt [} & $\rightarrow$ Possibly a message expression \\
+{\tt +} & $\rightarrow$ Possibly a method definition or declaration \\
+{\tt -} & $\rightarrow$ Possibly a method definition or declaration \\
+\end{tabular}
+
+This approach is simple and efficient.  The trade-off is that the
+preprocessor cannot perform sophisticated semantic analysis.  It relies
+on heuristic tests to distinguish Objective-C constructs from C
+constructs that use similar syntax (particularly bracket expressions).
+
+% ========================================================================
+\subsection{Limitations}
+% ========================================================================
+
+The following Objective-C features are not currently supported by the
+preprocessor:
+
+\begin{itemize}
+  \item {\tt for\ldots in} fast enumeration.
+  \item Subscript syntax ({\tt obj[key]} and {\tt obj[key] = value}).
+  \item Blocks (closures).
+  \item Typed {\tt @encode()} for all types.
+  \item Full {\tt @try/@catch/@finally} exception handling (partially
+        stubbed).
+  \item {\tt @protocol()} runtime protocol expressions.
+  \item Class extensions in {\tt @interface} (informal protocols with
+        category syntax are supported).
+  \item {\tt @required} and {\tt @optional} method modifiers (emitted
+        as comments only).
+\end{itemize}
+
+The runtime library does not yet implement:
+
+\begin{itemize}
+  \item Method cache lookup (methods are found by linear search of the
+        superclass chain).
+  \item Weak references.
+  \item Associated objects.
+  \item Tagged pointers.
+  \item Non-fragile ABI.
+\end{itemize}
+
+% ========================================================================
+\subsection{Performance}
+% ========================================================================
+
+The preprocessor is designed for correctness and simplicity, not for
+speed.  It processes input in a single pass with no lookahead beyond one
+character.  The generated C code is functionally equivalent to the
+Objective-C input but may differ in structure.
+
+The runtime's message dispatch walks the class hierarchy linearly to
+locate method implementations.  For programs that make frequently-invoked
+method calls, this may be slower than a cached dispatch.  A method cache
+is planned for a future release.
+
+% ========================================================================
+\newpage
+\section*{Appendix~A:\quad Translation Reference}
+\addcontentsline{toc}{section}{Appendix A: Translation Reference}
+% ========================================================================
+
+The following table summarizes the translation of each Objective-C
+construct.
+
+\bigskip
+\noindent
+\begin{longtable}{>{\tt}l >{\tt}l}
+\hline
+\multicolumn{1}{l}{\bf Input Construct} &
+\multicolumn{1}{l}{\bf Output C} \\
+\hline
+\endfirsthead
+\hline
+\multicolumn{1}{l}{\bf Input Construct} &
+\multicolumn{1}{l}{\bf Output C} \\
+\hline
+\endhead
+\hline
+\endfoot
+@
+interface Foo : Bar \{ \} & struct Foo \{ \ldots \}; \\
+@implementation Foo & /\ast\ @implementation\ Foo\ \ast/ \\
+@protocol MyProto & static Protocol\ *\_p = NULL; \\
+@property (nonatomic) int x; & --(int)x; --(void)setX:(int)v; \\
+@synthesize x = \_x; & getter/setter bodies \\
+@dynamic x; & /\ast\ comment\ \ast/ \\
+@class Foo; & struct Foo; \\
+@compatibility\_alias A B; & \#define A B \\
+@selector(foo) & sel\_registerName("foo") \\
+@encode(int) & "int" \\
+@autoreleasepool \{ \} & push/pop block \\
+[self foo:bar] & objc\_msgSend(self, sel("foo:"), bar) \\
+super foo] & objc\_msgSendSuper(\ldots) \\
+\_ivar & self-->\_ivar \\
++ (id)alloc & ClassName\_cls\_alloc\_(\ldots) \\
+--(int)getX & ClassName\_inst\_getX\_(\ldots) \\
+\#import "file.h" & recursive inline inclusion \\
+\#objc & \#include "objc/objc.h" \\
+\end{longtable}
+
+% ========================================================================
+\section*{Appendix~B:\quad Configuration Limits}
+\addcontentsline{toc}{section}{Appendix B: Configuration Limits}
+% ========================================================================
+
+The following limits are compile-time constants in the preprocessor.
+
+\bigskip
+\noindent
+\begin{tabularx}{\textwidth}{lrlX}
+\hline
+\bf Symbol & \bf Value & & \bf Description \\
+\hline
+{\tt MAX\_TOKEN}       & 4{,}096 & & Maximum token length. \\
+{\tt MAX\_LINE}        & 8{,}192 & & Maximum line length. \\
+{\tt MAX\_CLASSES}     & 512     & & Maximum tracked class names. \\
+{\tt MAX\_PROTOCOLS}   & 256     & & Maximum tracked protocol names. \\
+{\tt MAX\_PROPERTIES}  & 1{,}024 & & Maximum tracked properties. \\
+{\tt MAX\_INCLUDES}    & 64      & & Maximum include guard entries. \\
+{\tt MAX\_INCLUDE\_PATHS} & 64  & & Maximum {\tt -I} search paths. \\
+\hline
+\end{tabularx}
+
+\vfill
+
+% -----------------------------------------------------------------------
+%  Colophon
+% -----------------------------------------------------------------------
+
+\begin{center}
+\small\itshape
+This document was typeset in \TeX.\\
+The body text is set in Computer Modern Roman,\\
+and code examples in Computer Modern Typewriter.
+\end{center}
+
+\end{document}

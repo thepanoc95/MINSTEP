@@ -1,0 +1,17 @@
+*.log
+*.pdf
+*.toc
+*.aux
+*.bin
+*.elf
+*.app
+*.bundle
+*.kernel
+build
+vmmach
+vmunix
+boot
+*.o
+*.out
+*.elf
+*.mach

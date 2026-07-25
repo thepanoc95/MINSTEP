@@ -22,9 +22,11 @@
 
 /* Environment variable to force TUI mode */
 #define MX_TUI_FORCE_ENV "MX_FORCE_TUI"
+#define MX_TUI_DISABLE_ENV "MX_DISABLE_TUI"
 
-/* Check if TUI mode should be used */
+/* Check if TUI mode should be used. DPS is preferred when available. */
 BOOL MXUseTUI(void);
+BOOL MXUseGUI(void);
 
 /* ========================================================================
  * MXTerminalApplication - Terminal-based Application

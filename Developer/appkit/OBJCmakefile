@@ -1,0 +1,107 @@
+#
+# appkit/OBJCmakefile - MinSTEP AppKit Makefile
+#
+# Builds the MinSTEP AppKit framework library.
+#
+# Copyright (c) 2026 MinSTEP Project
+#
+
+# Framework name
+FRAMEWORK_NAME = appkit
+FRAMEWORK_VERSION = A
+
+# Directories
+DEVELOPER_ROOT = ../..
+FOUNDATION_ROOT = ../foundation
+OBJC_ROOT = ../../Developer/objc
+
+# Installation paths
+INSTALL_PREFIX = /Local/Library/Frameworks
+DESTDIR =
+
+# Compiler flags
+OBJC = gcc
+OBJC_FLAGS = -Wall -g -fno-strict-aliasing
+OBJC_LDFLAGS = -dynamiclib -flat_namespace -undefined suppress
+
+# Framework structure
+FRAMEWORK_DIR = $(DESTDIR)$(INSTALL_PREFIX)/$(FRAMEWORK_NAME).framework
+FRAMEWORK_HEADERS = $(FRAMEWORK_DIR)/Headers
+FRAMEWORK_RESOURCES = $(FRAMEWORK_DIR)/Resources
+FRAMEWORK_PRIVATE_HEADERS = $(FRAMEWORK_DIR)/PrivateHeaders
+
+# Source files
+HEADERS = \
+	appkit.h \
+	terminalapp.h
+
+INTERFACEBUILDER_HEADERS = \
+	interfacebuilder/nib.h
+
+INTERFACEBUILDER_SOURCES = \
+	interfacebuilder/nib.m \
+	interfacebuilder/interface.m
+
+TERMINAL_HEADERS = \
+	terminal/tui.h
+
+TERMINAL_SOURCES = \
+	terminal/tui.m \
+	terminalapp.m
+
+SOURCES = \
+	appkit.m
+
+# Object files
+OBJECTS = $(SOURCES:.m=.o) \
+          $(INTERFACEBUILDER_SOURCES:.m=.o) \
+          $(TERMINAL_SOURCES:.m=.o)
+
+# Dependencies
+FRAMEWORK_LIBS = -L$(FOUNDATION_ROOT) -lfoundation
+SYS_LIBS = -lncurses -lm
+
+# Default target
+all: framework
+
+# Build object files
+%.o: %.m
+	$(OBJC) $(OBJC_FLAGS) -c $< -o $@ -I$(FOUNDATION_ROOT) -I$(OBJC_ROOT)/objc
+
+# Link framework
+$(FRAMEWORK_NAME).a: $(OBJECTS)
+	ar rcs $@ $(OBJECTS)
+
+# Framework target
+framework: $(FRAMEWORK_NAME).a
+
+# Install headers
+install-headers:
+	install -d $(FRAMEWORK_HEADERS)
+	install -d $(FRAMEWORK_PRIVATE_HEADERS)
+	install -m 644 $(HEADERS) $(FRAMEWORK_HEADERS)/
+	install -m 644 $(INTERFACEBUILDER_HEADERS) $(FRAMEWORK_PRIVATE_HEADERS)/
+	install -m 644 $(TERMINAL_HEADERS) $(FRAMEWORK_HEADERS)/terminal/
+
+# Install library
+install-library: $(FRAMEWORK_NAME).a
+	install -d $(FRAMEWORK_DIR)/Versions/$(FRAMEWORK_VERSION)
+	install -d $(FRAMEWORK_DIR)/Versions/$(FRAMEWORK_VERSION)/Resources
+	install -d $(FRAMEWORK_DIR)/Versions/$(FRAMEWORK_VERSION)/Resources/terminal/
+	install -m 644 $(FRAMEWORK_NAME).a $(FRAMEWORK_DIR)/Versions/$(FRAMEWORK_VERSION)/$(FRAMEWORK_NAME)
+	ln -sf $(FRAMEWORK_VERSION) $(FRAMEWORK_DIR)/Versions/Current
+	ln -sf Versions/Current/$(FRAMEWORK_NAME) $(FRAMEWORK_DIR)/$(FRAMEWORK_NAME)
+
+# Full install
+install: install-headers install-library
+	install -d $(FRAMEWORK_DIR)
+	ln -sf Versions/Current/Headers $(FRAMEWORK_DIR)/Headers
+	ln -sf Versions/Current/PrivateHeaders $(FRAMEWORK_DIR)/PrivateHeaders
+	ln -sf Versions/Current/Resources $(FRAMEWORK_DIR)/Resources
+	ln -sf Versions/Current/$(FRAMEWORK_NAME) $(FRAMEWORK_DIR)/$(FRAMEWORK_NAME)
+
+# Clean
+clean:
+	rm -f $(OBJECTS) $(FRAMEWORK_NAME).a
+
+.PHONY: all framework install-headers install-library install clean

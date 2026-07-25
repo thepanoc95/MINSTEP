@@ -3,7 +3,6 @@
 #import <appkit/appkit.h>
 #import <appkit/terminalapp.h>
 
-
 @interface TextEditController: Object
     {
         NXWindow *mainWindow;

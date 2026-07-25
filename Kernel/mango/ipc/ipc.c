@@ -14,30 +14,30 @@
 #include <poll.h>
 #include <errno.h>
 
-ipc_service_entry_t _ipc_service_table[IPC_MAX_SERVICES];
-int                 _ipc_service_count = 0;
-mach_port_t         _ipc_bootstrap_port = MACH_PORT_NULL;
+ipc_service_entry_t ipc_service_table[IPC_MAX_SERVICES];
+int                 ipc_service_count = 0;
+mach_port_t         ipc_bootstrap_port = MACH_PORT_NULL;
 
 kern_return_t ipc_init(void)
 {
-    _ipc_bootstrap_port = mach_port_allocate(MACH_PORT_RIGHT_RECEIVE);
-    if (_ipc_bootstrap_port == MACH_PORT_NULL) {
+    ipc_bootstrap_port = mach_port_allocate(MACH_PORT_RIGHT_RECEIVE);
+    if (ipc_bootstrap_port == MACH_PORT_NULL) {
         klog_err("could not allocate bootstrap port\n");
         return KERN_FAILURE;
     }
 
-    _ipc_service_count = 0;
-    memset(_ipc_service_table, 0, sizeof(_ipc_service_table));
+    ipc_service_count = 0;
+    memset(ipc_service_table, 0, sizeof(ipc_service_table));
 
-    klog_info("bootstrap port ready (port %d)\n", _ipc_bootstrap_port);
+    klog_info("bootstrap port ready (port %d)\n", ipc_bootstrap_port);
     return KERN_SUCCESS;
 }
 
 void ipc_shutdown(void)
 {
-    if (_ipc_bootstrap_port != MACH_PORT_NULL) {
-        mach_port_destroy(_ipc_bootstrap_port);
-        _ipc_bootstrap_port = MACH_PORT_NULL;
+    if (ipc_bootstrap_port != MACH_PORT_NULL) {
+        mach_port_destroy(ipc_bootstrap_port);
+        ipc_bootstrap_port = MACH_PORT_NULL;
     }
 }
 
@@ -121,23 +121,23 @@ kern_return_t mach_msg_rpc(mach_port_t dest, mach_msg_t *msg,
 
 kern_return_t bootstrap_register(const char *name, mach_port_t port)
 {
-    if (!name || _ipc_service_count >= IPC_MAX_SERVICES) {
+    if (!name || ipc_service_count >= IPC_MAX_SERVICES) {
         return KERN_FAILURE;
     }
 
-    for (int i = 0; i < _ipc_service_count; i++) {
-        if (_ipc_service_table[i].in_use &&
-            strcmp(_ipc_service_table[i].name, name) == 0) {
+    for (int i = 0; i < ipc_service_count; i++) {
+        if (ipc_service_table[i].in_use &&
+            strcmp(ipc_service_table[i].name, name) == 0) {
             return KERN_NAME_EXISTS;
         }
     }
 
-    ipc_service_entry_t *entry = &_ipc_service_table[_ipc_service_count];
+    ipc_service_entry_t *entry = &ipc_service_table[ipc_service_count];
     strncpy(entry->name, name, sizeof(entry->name) - 1);
     entry->name[sizeof(entry->name) - 1] = '\0';
     entry->port = port;
     entry->in_use = TRUE;
-    _ipc_service_count++;
+    ipc_service_count++;
 
     klog_info("service registered: %s (port %d)\n", name, port);
     return KERN_SUCCESS;
@@ -147,10 +147,10 @@ kern_return_t bootstrap_lookup(const char *name, mach_port_t *out_port)
 {
     if (!name || !out_port) return KERN_INVALID_ARGUMENT;
 
-    for (int i = 0; i < _ipc_service_count; i++) {
-        if (_ipc_service_table[i].in_use &&
-            strcmp(_ipc_service_table[i].name, name) == 0) {
-            *out_port = _ipc_service_table[i].port;
+    for (int i = 0; i < ipc_service_count; i++) {
+        if (ipc_service_table[i].in_use &&
+            strcmp(ipc_service_table[i].name, name) == 0) {
+            *out_port = ipc_service_table[i].port;
             return KERN_SUCCESS;
         }
     }

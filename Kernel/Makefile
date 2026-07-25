@@ -43,6 +43,9 @@ BOOT_BIN  = osboot1
 MANGO_C_SRC = mango/main.c \
               mach.c \
               mango/mach/klog.c \
+              mango/mach/mach_port.c \
+              mango/mach/ipc.c \
+              mango/mach/task.c \
               mango/loader/mach_loader.c
 
 # Mango nanokernel -- Objective-C sources (compiled via objcc)
@@ -55,6 +58,9 @@ MANGO_M_SRC = mango/mach/MangoKernel.m \
 MANGO_C_OBJ = build/main.o \
               build/mach.o \
               build/klog.o \
+              build/mach_port.o \
+              build/ipc.o \
+              build/task.o \
               build/mach_loader.o
 
 MANGO_M_OBJ = build/MangoKernel.o \
@@ -102,6 +108,15 @@ build/main.o: mango/main.c | build
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(INCLUDES) -c -o $@ $<
 
 build/klog.o: mango/mach/klog.c | build
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(INCLUDES) -c -o $@ $<
+
+build/mach_port.o: mango/mach/mach_port.c | build
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(INCLUDES) -c -o $@ $<
+
+build/ipc.o: mango/mach/ipc.c | build
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(INCLUDES) -c -o $@ $<
+
+build/task.o: mango/mach/task.c | build
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(INCLUDES) -c -o $@ $<
 
 build/mach_loader.o: mango/loader/mach_loader.c | build

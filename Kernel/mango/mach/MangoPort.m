@@ -20,24 +20,25 @@
  *  Global port table (C globals, shared with C code)
  * ----------------------------------------------------------------------- */
 
-mach_port_object_t _mango_port_table[MACH_PORT_TABLE_SIZE];
-int                _mango_port_table_count = 0;
+mach_port_object_t mango_port_table[MACH_PORT_TABLE_SIZE];
+int                mango_port_table_count = 0;
 
 @implementation MangoPort
 
 - (id)init {
     self = [super init];
     if (self) {
-        memset(_mango_port_table, 0, sizeof(_mango_port_table));
-        _mango_port_table_count = 0;
+        memset(mango_port_table, 0, sizeof(mango_port_table));
+        mango_port_table_count = 0;
     }
     return self;
 }
 
 - (id)free {
     for (int i = 0; i < MACH_PORT_TABLE_SIZE; i++) {
-        if (_mango_port_table[i].in_use) {
-            [self deallocate:_mango_port_table[i].name];
+        if (mango_port_table[i].in_use) {
+            int portName = mango_port_table[i].name;
+            [self deallocate:portName];
         }
     }
     return [super free];
@@ -48,8 +49,8 @@ int                _mango_port_table_count = 0;
     int i;
 
     for (i = 0; i < MACH_PORT_TABLE_SIZE; i++) {
-        if (!_mango_port_table[i].in_use) {
-            obj = &_mango_port_table[i];
+        if (!mango_port_table[i].in_use) {
+            obj = &mango_port_table[i];
             break;
         }
     }
@@ -76,7 +77,7 @@ int                _mango_port_table_count = 0;
         }
     }
 
-    _mango_port_table_count++;
+    mango_port_table_count++;
     return obj->name;
 }
 
@@ -96,7 +97,7 @@ int                _mango_port_table_count = 0;
 
     obj->in_use = NO;
     obj->ref_count--;
-    _mango_port_table_count--;
+    mango_port_table_count--;
 
     return KERN_SUCCESS;
 }
@@ -114,7 +115,7 @@ int                _mango_port_table_count = 0;
         return NULL;
     }
 
-    mach_port_object_t *obj = &_mango_port_table[port - 1];
+    mach_port_object_t *obj = &mango_port_table[port - 1];
     if (!obj->in_use) {
         return NULL;
     }

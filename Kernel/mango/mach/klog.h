@@ -1,18 +1,3 @@
-/*
- * mango/mach/klog.h
- *
- * Kernel message logging with timestamps.
- *
- * Messages are printed to stderr in the style of BSD kernel messages:
- *
- *   [   0.0000000] Mango Nanokernel 0.1.0
- *   [   0.0012345] initializing IPC...
- *   [   2.1165136] fatal page fault in supervisor mode
- *
- * The timestamp is seconds since kernel init, with nanosecond
- * precision (via clock_gettime).
- */
-
 #ifndef MANGO_MACH_KLOG_H
 #define MANGO_MACH_KLOG_H
 
@@ -23,8 +8,6 @@
 extern "C" {
 #endif
 
-/* Log levels */
-
 #define KLOG_EMERG   0
 #define KLOG_ALERT   1
 #define KLOG_CRIT    2
@@ -34,20 +17,14 @@ extern "C" {
 #define KLOG_INFO    6
 #define KLOG_DEBUG   7
 
-/* Default log level, messages above are dropped */
 extern int klog_level;
-
-/* Kernel clock, initialized once at boot */
-
 extern struct timespec _klog_boot_time;
 
-/* Initialize the kernel clock (call once at boot) */
 static inline void klog_init_clock(void)
 {
     clock_gettime(CLOCK_MONOTONIC, &_klog_boot_time);
 }
 
-/* Get elapsed time since boot, in seconds (double precision) */
 static inline double klog_time_since_boot(void)
 {
     struct timespec now;
@@ -57,11 +34,8 @@ static inline double klog_time_since_boot(void)
     return sec + nsec / 1e9;
 }
 
-/* Core logging function */
 void klog_emit(int level, const char *fmt, ...)
     __attribute__((format(printf, 2, 3)));
-
-/* Convenience macros */
 
 #define klog_emerg(fmt, ...)  klog_emit(KLOG_EMERG,  fmt, ##__VA_ARGS__)
 #define klog_alert(fmt, ...)  klog_emit(KLOG_ALERT,  fmt, ##__VA_ARGS__)

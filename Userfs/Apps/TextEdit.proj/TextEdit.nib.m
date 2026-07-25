@@ -33,7 +33,7 @@
     NXMenuItem *saveItem = [fileMenu addItemWithTitle:"Save As..." action:@selector(saveAs:) keyEquivalent:"S"];
     [fileMenu addItemSeparator];
     NXMenuItem *quitItem = [fileMenu addItemWithTitle:"Quit" action:@selector(quit:) keyEquivalent:"q"];
-    NXMenuItem *InfoItem = []
+    NXMenuItem *InfoItem = [fileMenu addItemWithTitle:"Info..." action:@selector(showInfo:) keyEquivalent:"i"];
 
     [openItem setTarget:controller];
     [saveItem setTarget:controller];

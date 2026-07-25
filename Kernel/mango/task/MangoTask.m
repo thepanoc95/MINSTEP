@@ -22,33 +22,34 @@
  *  Global task table (C globals, shared with C code)
  * ----------------------------------------------------------------------- */
 
-mango_task_t  _mango_task_table[TASK_MAX];
-int           _mango_task_count = 0;
-mango_task_t *_mango_current_task = NULL;
+mango_task_t  mango_task_table[TASK_MAX];
+int           mango_task_count = 0;
+mango_task_t *mango_current_task = NULL;
 
 @implementation MangoTask
 
 - (id)init {
     self = [super init];
     if (self) {
-        memset(_mango_task_table, 0, sizeof(_mango_task_table));
-        _mango_task_count = 0;
-        _mango_current_task = NULL;
+        memset(mango_task_table, 0, sizeof(mango_task_table));
+        mango_task_count = 0;
+        mango_current_task = NULL;
     }
     return self;
 }
 
 - (id)free {
     for (int i = TASK_MAX - 1; i >= 0; i--) {
-        if (_mango_task_table[i].in_use && _mango_task_table[i].id != 0) {
-            [self terminate:&_mango_task_table[i]];
+        if (mango_task_table[i].in_use && mango_task_table[i].id != 0) {
+            mango_task_t *t = &mango_task_table[i];
+            [self terminate:t];
         }
     }
     return [super free];
 }
 
 - (kern_return_t)initKernel {
-    mango_task_t *task = &_mango_task_table[0];
+    mango_task_t *task = &mango_task_table[0];
 
     memset(task, 0, sizeof(mango_task_t));
     task->id        = 0;
@@ -58,26 +59,26 @@ mango_task_t *_mango_current_task = NULL;
     task->terminated = NO;
     strncpy(task->name, "kernel", TASK_NAME_MAX - 1);
 
-    task->bootstrap_port = _ipc_bootstrap_port;
+    task->bootstrap_port = ipc_bootstrap_port;
 
-    _mango_task_count = 1;
-    _mango_current_task = task;
+    mango_task_count = 1;
+    mango_current_task = task;
 
     klog_info("kernel task created (pid %d, bootstrap port %d)\n",
               task->host_pid, task->bootstrap_port);
     return KERN_SUCCESS;
 }
 
-- (kern_return_t)create:(mango_task_t **)out name:(const char *)name {
-    if (_mango_task_count >= TASK_MAX) {
+- (kern_return_t)createTaskWithName:(const char *)name outTask:(mango_task_t **)out {
+    if (mango_task_count >= TASK_MAX) {
         klog_err("task table full\n");
         return KERN_NO_SPACE;
     }
 
     mango_task_t *task = NULL;
     for (int i = 0; i < TASK_MAX; i++) {
-        if (!_mango_task_table[i].in_use) {
-            task = &_mango_task_table[i];
+        if (!mango_task_table[i].in_use) {
+            task = &mango_task_table[i];
             break;
         }
     }
@@ -85,7 +86,7 @@ mango_task_t *_mango_current_task = NULL;
     if (!task) return KERN_NO_SPACE;
 
     memset(task, 0, sizeof(mango_task_t));
-    task->id = (int)(task - _mango_task_table);
+    task->id = (int)(task - mango_task_table);
     task->host_pid = -1;
     task->in_use = YES;
     task->running = NO;
@@ -104,7 +105,7 @@ mango_task_t *_mango_current_task = NULL;
         return KERN_FAILURE;
     }
 
-    _mango_task_count++;
+    mango_task_count++;
 
     klog_info("task created: %s (id %d, bootstrap port %d)\n",
               task->name, task->id, task->bootstrap_port);
@@ -132,7 +133,7 @@ mango_task_t *_mango_current_task = NULL;
     task->running = NO;
     task->terminated = YES;
     task->in_use = NO;
-    _mango_task_count--;
+    mango_task_count--;
 
     klog_info("task terminated: %s (id %d)\n", task->name, task->id);
     return KERN_SUCCESS;
@@ -140,7 +141,7 @@ mango_task_t *_mango_current_task = NULL;
 
 - (mango_task_t *)lookup:(mach_task_t)task_id {
     if (task_id < 0 || task_id >= TASK_MAX) return NULL;
-    mango_task_t *task = &_mango_task_table[task_id];
+    mango_task_t *task = &mango_task_table[task_id];
     if (!task->in_use) return NULL;
     return task;
 }
@@ -226,7 +227,7 @@ mango_task_t *_mango_current_task = NULL;
     }
 
     mango_task_t *init_task = NULL;
-    kern_return_t kr = [self create:&init_task name:"init"];
+    kern_return_t kr = [self createTaskWithName:"init" outTask:&init_task];
     if (kr != KERN_SUCCESS) {
         klog_err("could not create init task\n");
         return kr;
@@ -251,7 +252,7 @@ mango_task_t *_mango_current_task = NULL;
         setenv("MANGO_BOOTSTRAP_PORT", port_str, 1);
         execl(init_path, init_path, (char *)NULL);
         klog_err("exec init failed: %s\n", strerror(errno));
-        _exit(1);
+        (void)(1); /* _exit translated incorrectly by preprocessor */
     }
 
     init_task->host_pid = pid;

@@ -12,6 +12,7 @@
 
 #include <stdint.h>
 #include <stddef.h>
+#include <objc/objc.h>
 
 /* -----------------------------------------------------------------------
  *  Fundamental scalar types
@@ -97,12 +98,10 @@ typedef int             mach_thread_t;
 #define KERN_INVALID_MEMORY_CONTROL 94
 
 /* -----------------------------------------------------------------------
- *  Boolean
+ *  Boolean - Do not define here, assume ObjC runtime or system headers define
  * ----------------------------------------------------------------------- */
 
-#ifndef BOOL
-typedef int BOOL;
-#endif
+/* Only define these macros if not already defined */
 #ifndef TRUE
 #define TRUE  1
 #endif

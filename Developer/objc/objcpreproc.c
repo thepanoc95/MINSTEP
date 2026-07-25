@@ -53,6 +53,12 @@ typedef int BOOL;
 #ifndef NO
 #define NO  0
 #endif
+#ifndef nil
+#define nil ((id)0)
+#endif
+#ifndef Nil
+#define Nil ((Class)0)
+#endif
 
 /* ========================================================================
  * State
@@ -154,6 +160,15 @@ static int peek_char(void)
 static void unread_char(int c)
 {
     if (c != EOF && input_file) ungetc(c, input_file);
+}
+
+static void unread_string(const char *str)
+{
+    /* Push string back onto input in reverse order */
+    int len = strlen(str);
+    for (int i = len - 1; i >= 0; i--) {
+        unread_char(str[i]);
+    }
 }
 
 static void output(const char *fmt, ...)
@@ -296,7 +311,7 @@ static void process_import(void)
         if (check_include_guard(buf)) {
             return;
         }
-        output("#include <%s>\n", buf);
+        preprocess_imported_file(buf);
     } else {
         unread_char(c);
         read_identifier(buf, MAX_LINE);
@@ -458,74 +473,125 @@ static void process_method_declaration(BOOL is_class_method)
 
     skip_whitespace();
 
+    /* Read return type */
     c = read_char();
     if (c == '(') {
         int depth = 1, i = 0;
-        while (depth > 0 && i < (int)sizeof(ret_type) - 1) {
+        /* Read until we find the closing paren, but track depth properly */
+        while (i < (int)sizeof(ret_type) - 1) {
             c = read_char();
-            if (c == '(') depth++;
-            else if (c == ')') depth--;
-            if (depth > 0) ret_type[i++] = c;
+            if (c == ')') {
+                if (depth == 1) {
+                    /* Found the matching closing paren for this type */
+                    ret_type[i] = '\0';
+                    break;
+                } else {
+                    depth--;
+                    ret_type[i++] = c;
+                }
+            } else if (c == '(') {
+                depth++;
+                ret_type[i++] = c;
+            } else {
+                ret_type[i++] = c;
+            }
         }
-        ret_type[i] = '\0';
     } else {
         unread_char(c);
     }
 
-    skip_whitespace();
-
-    {
-        char token[256];
-        int i = 0;
-
+    /* Read method name - collect all selector parts and arguments */
+    while (1) {
+        skip_whitespace();
         c = peek_char();
-        if (c != ':' && c != ';' && c != '{') {
-            read_identifier(token, sizeof(token));
-            i += snprintf(method_name + i, sizeof(method_name) - i, "%s", token);
+        
+        /* Check for end of declaration */
+        if (c == ';' || c == '{' || c == EOF) {
+            break;
         }
-
-        while (1) {
+        
+        /* Check if we're starting a selector keyword (identifier followed by ':') */
+        if (isalpha(c) || c == '_') {
+            /* Read the selector keyword */
+            char selector[256];
+            int sel_idx = 0;
+            while (sel_idx < (int)sizeof(selector) - 1) {
+                c = read_char();
+                if (isalnum(c) || c == '_') {
+                    selector[sel_idx++] = c;
+                } else {
+                    break;
+                }
+            }
+            selector[sel_idx] = '\0';
+            
+            /* Check what follows: ':' means selector, whitespace+identifier means return type (put back) */
             skip_whitespace();
             c = peek_char();
-
+            
             if (c == ':') {
-                read_char();
-                i += snprintf(method_name + i, sizeof(method_name) - i, "_");
-
+                /* This is a selector keyword */
+                read_char(); /* consume ':' */
+                if (method_name[0] != '\0') {
+                    strncat(method_name, "_", sizeof(method_name) - strlen(method_name) - 1);
+                }
+                strncat(method_name, selector, sizeof(method_name) - strlen(method_name) - 1);
+                
+                /* Read the argument type and name */
                 skip_whitespace();
                 c = peek_char();
+                
                 if (c == '(') {
-                    char arg_type[256];
-                    int d = 1, j = 0;
-                    read_char();
-                    while (d > 0 && j < (int)sizeof(arg_type) - 1) {
+                    /* Type in parentheses */
+                    char arg_type[512];
+                    int depth = 1, j = 0;
+                    read_char(); /* consume '(' */
+                    while (depth > 0 && j < (int)sizeof(arg_type) - 1) {
                         c = read_char();
-                        if (c == '(') d++;
-                        else if (c == ')') d--;
-                        if (d > 0) arg_type[j++] = c;
+                        if (c == '(') depth++;
+                        else if (c == ')') depth--;
+                        if (depth > 0) arg_type[j++] = c;
                     }
                     arg_type[j] = '\0';
-
+                    
                     skip_whitespace();
-                    {
-                        char arg_name[256];
-                        read_identifier(arg_name, sizeof(arg_name));
-                        if (arg_idx > 0) strcat(params, ", ");
-                        strcat(params, arg_type);
-                        strcat(params, " ");
-                        strcat(params, arg_name);
-                    }
+                    read_identifier(selector, sizeof(selector));
+                    
+                    if (arg_idx > 0) strcat(params, ", ");
+                    strcat(params, arg_type);
+                    strcat(params, " ");
+                    strcat(params, selector);
+                    arg_idx++;
                 } else {
+                    /* No type, just identifier */
                     char arg_name[256];
                     read_identifier(arg_name, sizeof(arg_name));
+                    
                     if (arg_idx > 0) strcat(params, ", ");
                     strcat(params, "id ");
                     strcat(params, arg_name);
+                    arg_idx++;
                 }
-                arg_idx++;
+                continue; /* Continue to next selector part */
             } else {
+                /* Not followed by ':', this might be a return type. Put back and break. */
+                for (int k = sel_idx - 1; k >= 0; k--) {
+                    unread_char(selector[k]);
+                }
+                if (c != EOF && c != ';' && c != '{') unread_char(c);
                 break;
             }
+        } else if (c == ':') {
+            /* Selector with no leading identifier */
+            read_char(); /* consume ':' */
+            if (method_name[0] != '\0') {
+                strncat(method_name, "_", sizeof(method_name) - strlen(method_name) - 1);
+            }
+            strncat(method_name, "_", sizeof(method_name) - strlen(method_name) - 1);
+            continue;
+        } else {
+            /* Not a selector, end of selector part */
+            break;
         }
     }
 
@@ -534,6 +600,7 @@ static void process_method_declaration(BOOL is_class_method)
 
     if (c == ';') {
         read_char();
+                is_class_method ? "class" : "instance", ret_type, method_name);
         if (is_class_method) {
             output("    %s %s_cls_%s(Class cls, SEL _cmd%s%s);\n",
                    ret_type, current_class, method_name,
@@ -589,10 +656,30 @@ static void process_method_definition(BOOL is_class_method)
         skip_whitespace();
         c = peek_char();
 
-        if (c != ':') break;
-
-        read_char(); /* consume ':' */
-        strcat(method_name, "_");
+        /* Check if we have another selector keyword */
+        if (c == ':') {
+            /* Selector keyword with no leading identifier (rare) */
+            read_char(); /* consume ':' */
+            strcat(method_name, "_");
+        } else if (isalpha(c) || c == '_') {
+            /* Read selector keyword identifier */
+            read_identifier(token, sizeof(token));
+            skip_whitespace();
+            c = peek_char();
+            if (c == ':') {
+                read_char(); /* consume ':' */
+                strcat(method_name, token);
+                strcat(method_name, "_");
+            } else {
+                /* No colon after identifier - end of selector */
+                unread_char(c);
+                unread_string(token);
+                break;
+            }
+        } else {
+            /* Not a selector keyword - end of selector */
+            break;
+        }
 
         /* Read argument type in parentheses */
         skip_whitespace();
@@ -1297,6 +1384,30 @@ static void process_message_expression(void)
 static void process_source(void)
 {
     int c;
+    static BOOL types_output = NO;
+
+    /* Output type definitions once at the start of processing */
+    if (!types_output) {
+        output("/* Objective-C type definitions */\n");
+        output("#include <stdio.h>\n");
+        output("#include <stdlib.h>\n");
+        output("#include <string.h>\n");
+        output("typedef int BOOL;\n");
+        output("typedef void *id;\n");
+        output("typedef void *Class;\n");
+        output("typedef void *SEL;\n");
+        output("typedef void *IMP;\n");
+        output("typedef void *Method;\n");
+        output("typedef void *Protocol;\n");
+        output("#ifndef YES\n");
+        output("#define YES 1\n");
+        output("#endif\n");
+        output("#ifndef NO\n");
+        output("#define NO 0\n");
+        output("#endif\n");
+        output("\n");
+        types_output = YES;
+    }
 
     while ((c = read_char()) != EOF) {
         switch (c) {
@@ -1412,11 +1523,16 @@ static void process_source(void)
             int peek_c;
             skip_whitespace();
             peek_c = peek_char();
-            if (in_implementation && (isalpha(peek_c) || peek_c == '(')) {
-                process_method_definition(YES);
-            } else if ((in_interface || in_protocol) &&
-                       (isalpha(peek_c) || peek_c == '(')) {
-                process_method_declaration(YES);
+            /* Check for method: + (returnType)... or + identifier... */
+            if (isalpha(peek_c) || peek_c == '(') {
+                if (in_implementation) {
+                    process_method_definition(YES);
+                } else if (in_interface || in_protocol) {
+                    process_method_declaration(YES);
+                } else {
+                    /* Not in interface/implementation, skip to end of line */
+                    while ((c = read_char()) != EOF && c != '\n') { }
+                }
             } else {
                 output("+");
             }
@@ -1427,11 +1543,16 @@ static void process_source(void)
             int peek_c;
             skip_whitespace();
             peek_c = peek_char();
-            if (in_implementation && (isalpha(peek_c) || peek_c == '(')) {
-                process_method_definition(NO);
-            } else if ((in_interface || in_protocol) &&
-                       (isalpha(peek_c) || peek_c == '(')) {
-                process_method_declaration(NO);
+            /* Check for method: - (returnType)... or - identifier... */
+            if (isalpha(peek_c) || peek_c == '(') {
+                if (in_implementation) {
+                    process_method_definition(NO);
+                } else if (in_interface || in_protocol) {
+                    process_method_declaration(NO);
+                } else {
+                    /* Not in interface/implementation, skip to end of line */
+                    while ((c = read_char()) != EOF && c != '\n') { }
+                }
             } else {
                 output("-");
             }
@@ -1536,6 +1657,41 @@ int main(int argc, char *argv[])
 
     property_count = 0;
     forward_class_count = 0;
+
+    /* Add default MinSTEP include paths */
+    {
+        const char *minstep_root = getenv("MINSTEP_ROOT");
+        if (!minstep_root) minstep_root = "/workspace/project/MINSTEP";
+        
+        char pathbuf[1024];
+        
+        /* Add MINSTEP_ROOT/Developer as base include path for framework-style includes */
+        snprintf(pathbuf, sizeof(pathbuf), "%s/Developer", minstep_root);
+        if (include_path_count < MAX_INCLUDE_PATHS) {
+            strncpy(include_paths[include_path_count], pathbuf, 511);
+            include_paths[include_path_count][511] = '\0';
+            include_path_count++;
+        }
+        
+        /* Also add to CC flags for the C compiler */
+        {
+            const char *cc_flags_template = " -I%s/Developer";
+            char *new_flags;
+            size_t len = strlen(cc_flags_template) + strlen(minstep_root) + 10;
+            new_flags = (char *)malloc(len);
+            snprintf(new_flags, len, cc_flags_template, minstep_root);
+            if (cc_flags) {
+                char *merged = (char *)malloc(strlen(cc_flags) + len + 2);
+                strcpy(merged, cc_flags);
+                strcat(merged, new_flags);
+                free((void *)cc_flags);
+                free(new_flags);
+                cc_flags = merged;
+            } else {
+                cc_flags = new_flags;
+            }
+        }
+    }
 
     /* Find C compiler */
     cc = getenv("OBJCC_CC");

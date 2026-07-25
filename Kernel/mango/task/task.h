@@ -80,9 +80,9 @@ typedef struct mango_task {
  *  Task table
  * ----------------------------------------------------------------------- */
 
-extern mango_task_t _mango_task_table[TASK_MAX];
-extern int          _mango_task_count;
-extern mango_task_t *_mango_current_task;
+extern mango_task_t mango_task_table[TASK_MAX];
+extern int          mango_task_count;
+extern mango_task_t *mango_current_task;
 
 /* -----------------------------------------------------------------------
  *  Task API

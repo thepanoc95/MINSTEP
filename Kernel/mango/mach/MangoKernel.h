@@ -15,10 +15,7 @@
 #include <sys/types.h>
 #include <signal.h>
 #include <termios.h>
-
-#ifdef __OBJC__
-#include <objc/Object.h>
-#endif
+#include <unistd.h>
 
 /* -----------------------------------------------------------------------
  *  Kernel version
@@ -35,6 +32,11 @@
 #define MANGO_BOOT_SINGLE_USER  0x0002
 #define MANGO_BOOT_NO_INIT      0x0004
 #define MANGO_BOOT_DEBUG        0x0008
+
+/* Forward declarations from other modules - include actual headers */
+#include "../task/task.h"
+#include "../ipc/ipc.h"
+#include "../loader/mach_loader.h"
 
 /* -----------------------------------------------------------------------
  *  C struct for kernel state (used as ObjC ivars via preprocessor)
@@ -67,15 +69,18 @@ typedef struct MangoKernel MangoKernel;
  *    ClassName_cls_methodName_   -- class methods
  * ----------------------------------------------------------------------- */
 
-/* Instance methods */
-id   MangoKernel_inst_init(MangoKernel *self, SEL _cmd);
-id   MangoKernel_inst_free(MangoKernel *self, SEL _cmd);
-kern_return_t MangoKernel_inst_start(MangoKernel *self, SEL _cmd, uint32_t flags);
-void MangoKernel_inst_loop(MangoKernel *self, SEL _cmd);
-void MangoKernel_inst_shutdown(MangoKernel *self, SEL _cmd);
-void MangoKernel_inst_banner(MangoKernel *self, SEL _cmd);
-const char *MangoKernel_inst_userfsRoot(MangoKernel *self, SEL _cmd);
-void MangoKernel_inst_setUserfsRoot_(MangoKernel *self, SEL _cmd, const char *path);
-kern_return_t MangoKernel_inst_launchInit(MangoKernel *self, SEL _cmd, const char *root);
+/* Instance methods - use generic id/SEL for compatibility */
+id   MangoKernel_inst_init(id self, SEL _cmd);
+id   MangoKernel_inst_free(id self, SEL _cmd);
+kern_return_t MangoKernel_inst_start(id self, SEL _cmd, uint32_t flags);
+void MangoKernel_inst_loop(id self, SEL _cmd);
+void MangoKernel_inst_shutdown(id self, SEL _cmd);
+void MangoKernel_inst_banner(id self, SEL _cmd);
+const char *MangoKernel_inst_userfsRoot(id self, SEL _cmd);
+void MangoKernel_inst_setUserfsRoot_(id self, SEL _cmd, const char *path);
+kern_return_t MangoKernel_inst_launchInit(id self, SEL _cmd, const char *root);
+
+/* Global kernel function */
+void mango_kernel_main(void);
 
 #endif /* MANGO_MACH_MANGOKERNEL_H */

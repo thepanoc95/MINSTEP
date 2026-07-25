@@ -1,10 +1,4 @@
 #objc
-/*
- * mango/ipc/MangoIPC.m
- *
- * Objective-C implementation of the Mango IPC subsystem.
- */
-
 #import "MangoIPC.h"
 #import "../mach/mach_port.h"
 #import "../mach/klog.h"
@@ -16,60 +10,56 @@
 #include <poll.h>
 #include <errno.h>
 
-/* -----------------------------------------------------------------------
- *  Global IPC state (C globals, shared with C code)
- * ----------------------------------------------------------------------- */
-
-ipc_service_entry_t _ipc_service_table[IPC_MAX_SERVICES];
-int                 _ipc_service_count = 0;
-mach_port_t         _ipc_bootstrap_port = MACH_PORT_NULL;
+ipc_service_entry_t ipc_service_table[IPC_MAX_SERVICES];
+int                 ipc_service_count = 0;
+mach_port_t         ipc_bootstrap_port = MACH_PORT_NULL;
 
 @implementation MangoIPC
 
 - (id)init {
     self = [super init];
     if (self) {
-        _ipc_bootstrap_port = mach_port_allocate(MACH_PORT_RIGHT_RECEIVE);
-        if (_ipc_bootstrap_port == MACH_PORT_NULL) {
+        ipc_bootstrap_port = mach_port_allocate(MACH_PORT_RIGHT_RECEIVE);
+        if (ipc_bootstrap_port == MACH_PORT_NULL) {
             klog_err("could not allocate bootstrap port\n");
         }
 
-        _ipc_service_count = 0;
-        memset(_ipc_service_table, 0, sizeof(_ipc_service_table));
+        ipc_service_count = 0;
+        memset(ipc_service_table, 0, sizeof(ipc_service_table));
 
-        if (_ipc_bootstrap_port != MACH_PORT_NULL) {
-            klog_info("bootstrap port ready (port %d)\n", _ipc_bootstrap_port);
+        if (ipc_bootstrap_port != MACH_PORT_NULL) {
+            klog_info("bootstrap port ready (port %d)\n", ipc_bootstrap_port);
         }
     }
     return self;
 }
 
 - (id)free {
-    if (_ipc_bootstrap_port != MACH_PORT_NULL) {
-        mach_port_destroy(_ipc_bootstrap_port);
-        _ipc_bootstrap_port = MACH_PORT_NULL;
+    if (ipc_bootstrap_port != MACH_PORT_NULL) {
+        mach_port_destroy(ipc_bootstrap_port);
+        ipc_bootstrap_port = MACH_PORT_NULL;
     }
     return [super free];
 }
 
 - (kern_return_t)register:(const char *)name :(mach_port_t)port {
-    if (!name || _ipc_service_count >= IPC_MAX_SERVICES) {
+    if (!name || ipc_service_count >= IPC_MAX_SERVICES) {
         return KERN_FAILURE;
     }
 
-    for (int i = 0; i < _ipc_service_count; i++) {
-        if (_ipc_service_table[i].in_use &&
-            strcmp(_ipc_service_table[i].name, name) == 0) {
+    for (int i = 0; i < ipc_service_count; i++) {
+        if (ipc_service_table[i].in_use &&
+            strcmp(ipc_service_table[i].name, name) == 0) {
             return KERN_NAME_EXISTS;
         }
     }
 
-    ipc_service_entry_t *entry = &_ipc_service_table[_ipc_service_count];
+    ipc_service_entry_t *entry = &ipc_service_table[ipc_service_count];
     strncpy(entry->name, name, sizeof(entry->name) - 1);
     entry->name[sizeof(entry->name) - 1] = '\0';
     entry->port = port;
     entry->in_use = YES;
-    _ipc_service_count++;
+    ipc_service_count++;
 
     klog_info("service registered: %s (port %d)\n", name, port);
     return KERN_SUCCESS;
@@ -78,10 +68,10 @@ mach_port_t         _ipc_bootstrap_port = MACH_PORT_NULL;
 - (kern_return_t)lookup:(const char *)name :(mach_port_t *)out {
     if (!name || !out) return KERN_INVALID_ARGUMENT;
 
-    for (int i = 0; i < _ipc_service_count; i++) {
-        if (_ipc_service_table[i].in_use &&
-            strcmp(_ipc_service_table[i].name, name) == 0) {
-            *out = _ipc_service_table[i].port;
+    for (int i = 0; i < ipc_service_count; i++) {
+        if (ipc_service_table[i].in_use &&
+            strcmp(ipc_service_table[i].name, name) == 0) {
+            *out = ipc_service_table[i].port;
             return KERN_SUCCESS;
         }
     }

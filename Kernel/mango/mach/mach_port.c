@@ -21,11 +21,11 @@
 #include <poll.h>
 
 /* -----------------------------------------------------------------------
- *  Global port table
+ *  Global port table (extern declared in MangoPort.h)
  * ----------------------------------------------------------------------- */
 
-mach_port_object_t _mango_port_table[MACH_PORT_TABLE_SIZE];
-int                _mango_port_table_count = 0;
+extern mach_port_object_t mango_port_table[MACH_PORT_TABLE_SIZE];
+extern int                mango_port_table_count;
 
 /* -----------------------------------------------------------------------
  *  mach_port_allocate
@@ -42,8 +42,8 @@ mach_port_t mach_port_allocate(int right)
 
     /* Find a free slot */
     for (i = 0; i < MACH_PORT_TABLE_SIZE; i++) {
-        if (!_mango_port_table[i].in_use) {
-            obj = &_mango_port_table[i];
+        if (!mango_port_table[i].in_use) {
+            obj = &mango_port_table[i];
             break;
         }
     }
@@ -71,7 +71,7 @@ mach_port_t mach_port_allocate(int right)
         }
     }
 
-    _mango_port_table_count++;
+    mango_port_table_count++;
     return obj->name;
 }
 
@@ -97,7 +97,7 @@ kern_return_t mach_port_deallocate(mach_port_t port)
 
     obj->in_use = FALSE;
     obj->ref_count--;
-    _mango_port_table_count--;
+    mango_port_table_count--;
 
     return KERN_SUCCESS;
 }
@@ -125,7 +125,7 @@ mach_port_object_t *mach_port_lookup(mach_port_t port)
         return NULL;
     }
 
-    mach_port_object_t *obj = &_mango_port_table[port - 1];
+    mach_port_object_t *obj = &mango_port_table[port - 1];
     if (!obj->in_use) {
         return NULL;
     }
@@ -224,5 +224,27 @@ kern_return_t mach_port_insert_receive(mach_port_t port, mach_port_name_t name)
     mach_port_object_t *obj = mach_port_lookup(port);
     if (!obj) return KERN_INVALID_RIGHT;
     obj->rights = MACH_PORT_RIGHT_RECEIVE;
+    return KERN_SUCCESS;
+}
+
+/* -----------------------------------------------------------------------
+ *  mach_msg_send
+ *
+ *  Send a message via a port (simplified for usermode).
+ * ----------------------------------------------------------------------- */
+
+kern_return_t mach_msg_send(mach_port_t port, mach_msg_t *msg, mach_msg_size_t size, int timeout)
+{
+    mach_port_object_t *obj = mach_port_lookup(port);
+    if (!obj) return KERN_INVALID_RIGHT;
+
+    /* In usermode, we use socket write() to send the message */
+    if (obj->fd < 0) return KERN_FAILURE;
+
+    ssize_t sent = write(obj->fd, msg, size);
+    if (sent < 0) {
+        return KERN_FAILURE;
+    }
+
     return KERN_SUCCESS;
 }

@@ -39,9 +39,9 @@ typedef struct ipc_service_entry {
 
 #define IPC_MAX_SERVICES  128
 
-extern ipc_service_entry_t _ipc_service_table[IPC_MAX_SERVICES];
-extern int                 _ipc_service_count;
-extern mach_port_t         _ipc_bootstrap_port;
+extern ipc_service_entry_t ipc_service_table[IPC_MAX_SERVICES];
+extern int                 ipc_service_count;
+extern mach_port_t         ipc_bootstrap_port;
 
 /* -----------------------------------------------------------------------
  *  IPC initialization

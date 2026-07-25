@@ -10,6 +10,7 @@
 
 #include "mach_types.h"
 #include <sys/types.h>
+#include <objc/objc.h>
 
 #ifdef __cplusplus
 extern "C" {

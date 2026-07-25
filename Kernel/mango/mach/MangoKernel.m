@@ -47,7 +47,7 @@
 
 - (void)banner {
     klog_info("Mango Nanokernel %s\n", MANGO_KERNEL_VERSION);
-    klog_info("MinSTEP Operating Environment\n");
+    klog_info("MINSTEP Operating System\n");
     klog_info("Copyright (c) 2026 Miguel V. Mesquita\n");
     klog_info("Licensed under the BSD License\n");
 }
@@ -107,7 +107,7 @@
         pid_t pid;
         while ((pid = waitpid(-1, &status, WNOHANG)) > 0) {
             for (int i = 0; i < TASK_MAX; i++) {
-                mango_task_t *task = &_mango_task_table[i];
+                mango_task_t *task = &mango_task_table[i];
                 if (task->in_use && task->host_pid == pid) {
                     klog_notice("task %s (pid %d) exited with status %d\n",
                                 task->name, pid, WEXITSTATUS(status));
@@ -118,9 +118,9 @@
             }
         }
 
-        mach_port_object_t *bp = mach_port_lookup(_ipc_bootstrap_port);
+        mach_port_object_t *bp = mach_port_lookup(ipc_bootstrap_port);
         if (bp && bp->queue_count > 0) {
-            mach_msg_t *msg = mach_port_dequeue_message(_ipc_bootstrap_port);
+            mach_msg_t *msg = mach_port_dequeue_message(ipc_bootstrap_port);
             if (msg) {
                 mach_msg_t reply;
                 memset(&reply, 0, sizeof(reply));
@@ -147,7 +147,7 @@
     klog_info("shutting down...\n");
 
     for (int i = TASK_MAX - 1; i >= 0; i--) {
-        mango_task_t *task = &_mango_task_table[i];
+        mango_task_t *task = &mango_task_table[i];
         if (task->in_use && task->id != 0) {
             mango_task_terminate(task);
         }
@@ -178,8 +178,9 @@
 
 - (void)setUserfsRoot:(const char *)path {
     if (path) {
-        strncpy(_userfs_root, path, sizeof(_userfs_root) - 1);
-        _userfs_root[sizeof(_userfs_root) - 1] = '\0';
+        /* Hardcode size to avoid preprocessor bug with sizeof(ivars) */
+        strncpy(_userfs_root, path, 511);
+        _userfs_root[511] = '\0';
     }
 }
 
@@ -223,7 +224,8 @@
         setenv("MANGO_BOOTSTRAP_PORT", port_str, 1);
         execl(init_path, init_path, (char *)NULL);
         klog_err("exec init failed: %s\n", strerror(errno));
-        _exit(1);
+        /* Use function pointer cast to avoid preprocessor translating _exit to self->_exit */
+        ((void(*)(int))_exit)(1);
     }
 
     init_task->host_pid = pid;

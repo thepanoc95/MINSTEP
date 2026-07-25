@@ -1,0 +1,106 @@
+%!PS-Adobe-3.0
+%%Title: Workspace
+%%BoundingBox: 0 0 1024 768
+%%EndComments
+
+/screenWidth 1024 def
+/screenHeight 768 def
+/winX 100 def
+/winY 400 def
+/winW 450 def
+/winH 300 def
+/isDragging false def
+
+/drawDesktop {
+    0.15 0.25 0.35 setrgbcolor
+    0 0 screenWidth screenHeight rectfill
+    
+    % Draw a simple top menu bar
+    0.9 0.9 0.9 setrgbcolor
+    0 screenHeight 30 sub screenWidth 30 rectfill
+    
+    0 setgray
+    /Helvetica findfont 14 scalefont setfont
+    20 screenHeight 20 sub moveto
+    (Workspace) show
+    120 screenHeight 20 sub moveto
+    (Tools) show
+} def
+
+% Draw a custom window frame and content
+/drawWindow {
+    % Window shadow / border
+    0.1 0.1 0.1 setrgbcolor
+    winX 2 sub winY 2 sub winW 4 add winH 4 add rectfill
+
+    % Window Body
+    0.95 0.95 0.95 setrgbcolor
+    winX winY winW winH rectfill
+
+    % Title Bar
+    0.2 0.4 0.6 setrgbcolor
+    winX winY winH add 25 sub winW 25 rectfill
+
+    % Title Text
+    1 1 1 setrgbcolor
+    /Helvetica-Bold findfont 12 scalefont setfont
+    winX 10 add winY winH add 18 sub moveto
+    (Display PostScript Terminal) show
+
+    % Inner Content Accent
+    0.3 setgray
+    winX 15 add winY 15 add winW 30 sub winH 55 sub rectstroke
+} def
+
+% Refresh the entire canvas
+/refreshScreen {
+    drawDesktop
+    drawWindow
+    copypage % Render to interactive display buffer
+} def
+
+% --- INTERACTION ENGINE (DPS Window/Event Simulation) ---
+
+% Check if a click hit the window's title bar
+/insideTitleBar { % stack: mouseX mouseY -> bool
+    /my exch def /mx exch def
+    mx winX ge
+    mx winX winW add le and
+    my winY winH add 25 sub ge and
+    my winY winH add le and
+} def
+
+% Handle incoming system events
+/handleMouseDown { % stack: clickX clickY
+    /clickY exch def /clickX exch def
+    clickX clickY insideTitleBar {
+        /isDragging true def
+        /offsetX clickX winX sub def
+        /offsetY clickY winY sub def
+    } if
+} def
+
+/handleMouseDrag { % stack: newX newY
+    isDragging {
+        /mouseY exch def /mouseX exch def
+        /winX mouseX offsetX sub def
+        /winY mouseY offsetY sub def
+        refreshScreen
+    } { pop pop } ifelse
+} def
+
+/handleMouseUp {
+    /isDragging false def
+} def
+
+% --- INITIALIZATION ---
+refreshScreen
+
+% --- REAL DPS INTERACTION LOOP ---
+% If running in a true DPS environment, replace this with your server's native event stream.
+% Example model loop:
+%{
+%    current_dps_event dup /MouseDown eq { handleMouseDown } if
+%                          dup /MouseDrag eq { handleMouseDrag } if
+%                          dup /MouseUp   eq { handleMouseUp   } if
+%} loop

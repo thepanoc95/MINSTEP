@@ -7,7 +7,7 @@
 #   4. Installation to prefix
 #
 # Usage:
-#   make              Build everything
+#   make              Build objcc and headers
 #   make objc         Build the preprocessor
 #   make libobjcrt    Build the runtime library
 #   make install      Install to PREFIX
@@ -22,6 +22,7 @@ CC       = gcc
 CFLAGS   ?= -Wall -Wextra -Werror -Wno-stringop-truncation -Wno-format-truncation -std=gnu99
 CFLAGS   += -g -O2
 CPPFLAGS ?=
+CPPFLAGS += -I$(OBJCDIR)
 LDFLAGS  ?=
 LDLIBS   ?= -ldl -lpthread
 
@@ -56,7 +57,7 @@ STDHDR_SRC   = $(OBJCDIR)/objc/objc.h
 
 .PHONY: all clean install uninstall test preproc libobjcrt headers
 
-all: preproc libobjcrt headers
+all: preproc headers
 
 # Preprocessor
 preproc: $(PREPROC_BIN)

@@ -31,7 +31,8 @@
 @class MXNibBuilder;
 @class NXAlertPanel;
 
-/* TUI (Text User Interface) support - for terminal-based apps */
+/* Display backends: DPS first, TUI fallback for terminal-based apps */
+#import <appkit/dps.h>
 #import <appkit/terminal/tui.h>
 #import <appkit/terminalapp.h>
 

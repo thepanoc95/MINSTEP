@@ -9,6 +9,7 @@
 
 #objc
 #import <appkit/terminalapp.h>
+#import <appkit/dps.h>
 
 /* Global state */
 static MXTerminalApplication *_sharedTerminalApp = nil;
@@ -19,16 +20,18 @@ static MXTerminalApplication *_sharedTerminalApp = nil;
 
 BOOL MXUseTUI(void)
 {
-    /* Check environment variable */
+    /* Check environment variables */
     const char *env = getenv(MX_TUI_FORCE_ENV);
     if (env && strcmp(env, "1") == 0) {
         return YES;
     }
-    
-    /* Check if DISPLAY is set (for GUI mode) */
-    const char *display = getenv("DISPLAY");
-    if (display && strlen(display) > 0) {
-        return NO; /* Has display, use GUI */
+    if (getenv(MX_TUI_DISABLE_ENV)) {
+        return NO;
+    }
+
+    /* Prefer the Display PostScript display system when it is usable. */
+    if (MXUseDPS()) {
+        return NO;
     }
     
     /* Check if running in a terminal */
@@ -38,6 +41,11 @@ BOOL MXUseTUI(void)
     
     /* Default to TUI if no display server available */
     return YES;
+}
+
+BOOL MXUseGUI(void)
+{
+    return MXUseDPS();
 }
 
 /* ========================================================================
@@ -96,9 +104,20 @@ BOOL MXUseTUI(void)
 
 - (void)runGUI
 {
-    /* GUI mode would connect to PostScript display server */
-    /* For now, fall back to TUI */
-    [self runTUI];
+    /* GUI mode connects to the MINSTEP Display PostScript system. */
+    int width, height;
+    MXDPSApplication *dpsApp;
+    MXDPSDefaultSize(&width, &height);
+    dpsApp = MXDPSApplicationCreate(width, height, MXDPSDefaultBackend());
+    if (!dpsApp) {
+        [self runTUI];
+        return;
+    }
+    while (isRunning) {
+        if (!MXDPSApplicationRunOnce(dpsApp)) break;
+        break;
+    }
+    MXDPSApplicationDestroy(dpsApp);
 }
 
 - (void)draw

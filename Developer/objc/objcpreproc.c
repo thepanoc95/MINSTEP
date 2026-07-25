@@ -600,7 +600,6 @@ static void process_method_declaration(BOOL is_class_method)
 
     if (c == ';') {
         read_char();
-                is_class_method ? "class" : "instance", ret_type, method_name);
         if (is_class_method) {
             output("    %s %s_cls_%s(Class cls, SEL _cmd%s%s);\n",
                    ret_type, current_class, method_name,

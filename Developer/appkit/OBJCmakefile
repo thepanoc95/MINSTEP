@@ -33,6 +33,7 @@ FRAMEWORK_PRIVATE_HEADERS = $(FRAMEWORK_DIR)/PrivateHeaders
 # Source files
 HEADERS = \
 	appkit.h \
+	dps.h \
 	terminalapp.h
 
 INTERFACEBUILDER_HEADERS = \
@@ -50,7 +51,8 @@ TERMINAL_SOURCES = \
 	terminalapp.m
 
 SOURCES = \
-	appkit.m
+	appkit.m \
+	dps.m
 
 # Object files
 OBJECTS = $(SOURCES:.m=.o) \
@@ -60,13 +62,21 @@ OBJECTS = $(SOURCES:.m=.o) \
 # Dependencies
 FRAMEWORK_LIBS = -L$(FOUNDATION_ROOT) -lfoundation
 SYS_LIBS = -lncurses -lm
+DPS_INCLUDES = -I../../PostScript/Display
 
 # Default target
 all: framework
 
+# Build only the C-compatible Display PostScript AppKit bridge.
+# This target works on hosts without a system Objective-C frontend.
+dps-support: dps.o
+
+dps.o: dps.m dps.h
+	$(OBJC) $(OBJC_FLAGS) -x c -c $< -o $@ -I$(FOUNDATION_ROOT) -I$(OBJC_ROOT)/objc $(DPS_INCLUDES)
+
 # Build object files
 %.o: %.m
-	$(OBJC) $(OBJC_FLAGS) -c $< -o $@ -I$(FOUNDATION_ROOT) -I$(OBJC_ROOT)/objc
+	$(OBJC) $(OBJC_FLAGS) -c $< -o $@ -I$(FOUNDATION_ROOT) -I$(OBJC_ROOT)/objc $(DPS_INCLUDES)
 
 # Link framework
 $(FRAMEWORK_NAME).a: $(OBJECTS)
@@ -104,4 +114,5 @@ install: install-headers install-library
 clean:
 	rm -f $(OBJECTS) $(FRAMEWORK_NAME).a
 
-.PHONY: all framework install-headers install-library install clean
+.PHONY: all framework dps-support install-headers install-library install clean
+

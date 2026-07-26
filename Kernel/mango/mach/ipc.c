@@ -9,12 +9,6 @@
 #include <string.h>
 #include <stdlib.h>
 
-kern_return_t ipc_init(void)
-{
-    /* IPC initialization is handled by MangoIPC Objective-C class */
-    return KERN_SUCCESS;
-}
-
 void ipc_shutdown(void)
 {
     /* IPC shutdown is handled by MangoIPC Objective-C class */

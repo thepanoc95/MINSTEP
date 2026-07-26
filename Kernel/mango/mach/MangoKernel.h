@@ -78,9 +78,9 @@ void MangoKernel_inst_shutdown(id self, SEL _cmd);
 void MangoKernel_inst_banner(id self, SEL _cmd);
 const char *MangoKernel_inst_userfsRoot(id self, SEL _cmd);
 void MangoKernel_inst_setUserfsRoot_(id self, SEL _cmd, const char *path);
-kern_return_t MangoKernel_inst_launchInit(id self, SEL _cmd, const char *root);
+kern_return_t MangoKernel_inst_launchInit_initPath_(id self, SEL _cmd, const char *root, const char *init_path);
 
 /* Global kernel function */
-void mango_kernel_main(void);
+void mango_kernel_main(const char *init_path);
 
 #endif /* MANGO_MACH_MANGOKERNEL_H */

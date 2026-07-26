@@ -1,0 +1,26 @@
+tools:
+    shell:
+        allow:
+            - find *
+            - head *
+            - ls *
+            - cd *
+            - make preproc
+            - file *
+            - timeout 5 *
+            - echo *
+            - git log *
+            - git show *
+            - rm *
+            - tail *
+            - which gdb
+            - which ltrace
+            - which strace
+            - timeout 10 gdb *
+            - ./Developer/objc/objcc *
+            - sleep 2
+            - gdb *
+            - kill $PID
+            - cp *
+            - gcc *
+            - cat *

@@ -178,7 +178,7 @@ void mango_set_userfs_root(const char *path)
     }
 }
 
-void mango_kernel_main(void)
+void mango_kernel_main(const char *init_path)
 {
     struct termios saved_term;
     int have_saved_term = (tcgetattr(STDIN_FILENO, &saved_term) == 0);
@@ -203,7 +203,7 @@ void mango_kernel_main(void)
     }
 
     if (!(flags & MANGO_BOOT_SINGLE_USER)) {
-        kr = mango_launch_init(mango_get_userfs_root());
+        kr = mango_launch_init(mango_get_userfs_root(), init_path);
         if (kr != KERN_SUCCESS) {
             klog_warn("init launch failed (%d)\n", kr);
             klog_notice("entering single-user mode\n");

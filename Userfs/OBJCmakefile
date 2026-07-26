@@ -1,0 +1,23 @@
+OUTPUT_BUNDLE := System.bundle
+CC := objcc
+
+bundle:
+	@mkdir -p $(OUTPUT_BUNDLE)/Resources/{Apps,System,Admin}
+
+adminapps:
+	$(CC) -o $(OUTPUT_BUNDLE)/Admin/Configure.app Admin/Configure/%.m
+	@echo "Built: $(OUTPUT_BUNDLE)/Admin/Configure.app"
+	$(CC) -o $(OUTPUT_BUNDLE)/Admin/LoaderConf.app Admin/LoaderConf/%.m
+	@echo "Built: $(OUTPUT_BUNDLE)/Admin/LoaderConf.app"
+	$(CC) -o $(OUTPUT_BUNDLE)/Admin/Network.app Admin/Network/%.m
+	@echo "Built: $(OUTPUT_BUNDLE)/Admin/Network.app"
+	@echo ""
+
+all: bundle apps
+	$(CC) -o $(OUTPUT_BUNDLE)/System.app %.m
+	@echo "Built: $(OUTPUT_BUNDLE)"
+	@echo ""
+
+clean:
+	rm -f $(OUTPUT_BUNDLE)
+	@echo "Cleaned: $(OUTPUT_BUNDLE)"

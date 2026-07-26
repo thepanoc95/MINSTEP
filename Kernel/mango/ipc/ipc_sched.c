@@ -1,0 +1,139 @@
+/*
+ * mango/ipc/ipc_sched.c
+ *
+ * Usermode implementation of Mach scheduler primitives using pthreads.
+ *
+ * Provides: assert_wait, thread_block, thread_wakeup, thread_go
+ *
+ * In the real Mach kernel, these block/wake kernel threads.
+ * In Mango's usermode nanokernel, we use pthread condition variables
+ * to implement the same semantics for the IPC subsystem.
+ */
+
+#include <stdlib.h>
+#include <pthread.h>
+#include <mach/boolean.h>
+#include <kern/sched_prim.h>
+#include <ipc/ipc_thread.h>
+
+/* -----------------------------------------------------------------------
+ *  Global wait channel list
+ * ----------------------------------------------------------------------- */
+
+mango_wait_channel_t *mango_wait_channels = NULL;
+
+/* Thread-local storage for the current wait channel */
+static __thread mango_wait_channel_t *mango_current_wait = NULL;
+
+/* -----------------------------------------------------------------------
+ *  mango_wait_find -- find or create a wait channel for an event
+ * ----------------------------------------------------------------------- */
+
+mango_wait_channel_t *
+mango_wait_find(event_t event)
+{
+	mango_wait_channel_t *ch;
+
+	/* Search existing channels */
+	for (ch = mango_wait_channels; ch != NULL; ch = ch->mw_next) {
+		if (ch->mw_event == event)
+			return ch;
+	}
+
+	/* Allocate a new channel */
+	ch = calloc(1, sizeof(*ch));
+	if (ch == NULL)
+		return NULL;
+
+	ch->mw_event = event;
+	pthread_mutex_init(&ch->mw_mutex, NULL);
+	pthread_cond_init(&ch->mw_cond, NULL);
+	ch->mw_woken = FALSE;
+	ch->mw_next = mango_wait_channels;
+	mango_wait_channels = ch;
+
+	return ch;
+}
+
+/* -----------------------------------------------------------------------
+ *  mango_assert_wait -- mark current thread as waiting on an event
+ * ----------------------------------------------------------------------- */
+
+void
+mango_assert_wait(event_t event, boolean_t interruptible)
+{
+	mango_wait_channel_t *ch;
+
+	(void)interruptible;
+
+	ch = mango_wait_find(event);
+	if (ch == NULL)
+		return;
+
+	pthread_mutex_lock(&ch->mw_mutex);
+	ch->mw_woken = FALSE;
+	mango_current_wait = ch;
+	/* Don't unlock -- thread_block will wait and then unlock */
+}
+
+/* -----------------------------------------------------------------------
+ *  mango_thread_block -- block until woken or timeout
+ * ----------------------------------------------------------------------- */
+
+void
+mango_thread_block(void (*cleanup)(void))
+{
+	mango_wait_channel_t *ch = mango_current_wait;
+
+	(void)cleanup;
+
+	if (ch == NULL) {
+		/* Nothing to wait on -- just yield */
+		sched_yield();
+		return;
+	}
+
+	/* Wait for the event to be signaled */
+	while (!ch->mw_woken)
+		pthread_cond_wait(&ch->mw_cond, &ch->mw_mutex);
+
+	pthread_mutex_unlock(&ch->mw_mutex);
+	mango_current_wait = NULL;
+}
+
+/* -----------------------------------------------------------------------
+ *  mango_thread_wakeup -- wake all threads waiting on an event
+ * ----------------------------------------------------------------------- */
+
+void
+mango_thread_wakeup(event_t event)
+{
+	mango_wait_channel_t *ch;
+
+	ch = mango_wait_find(event);
+	if (ch == NULL)
+		return;
+
+	pthread_mutex_lock(&ch->mw_mutex);
+	ch->mw_woken = TRUE;
+	pthread_cond_broadcast(&ch->mw_cond);
+	pthread_mutex_unlock(&ch->mw_mutex);
+}
+
+/* -----------------------------------------------------------------------
+ *  thread_go -- mark a thread as runnable (no-op in usermode)
+ *
+ *  In the real Mach kernel, this puts a thread on the run queue.
+ *  In usermode, the thread is managed by the host scheduler.
+ *  The caller sets ith_state before calling this, so the blocked
+ *  thread will see the updated state when it checks.
+ * ----------------------------------------------------------------------- */
+
+void
+thread_go(struct mango_ipc_thread *thread)
+{
+	(void)thread;
+	/* No-op in usermode -- the thread will check ith_state
+	 * when it next runs.  In a more complete implementation,
+	 * we could signal a per-thread condition variable here. */
+}

@@ -380,10 +380,13 @@ static void process_interface(void)
     BOOL has_super = NO;
     BOOL has_protocols = NO;
 
+    fprintf(stderr, "DEBUG: process_interface enter\n");
     in_interface = YES;
 
     skip_whitespace();
+    fprintf(stderr, "DEBUG: process_interface after skip_ws, calling read_identifier\n");
     read_identifier(name, sizeof(name));
+    fprintf(stderr, "DEBUG: process_interface name='%s'\n", name);
 
     if (name[0] == '\0') {
         fprintf(stderr, "%s:%d: expected class name after @interface\n",
@@ -505,6 +508,7 @@ static void process_method_declaration(BOOL is_class_method)
     int c;
     int arg_idx = 0;
 
+    fprintf(stderr, "DEBUG: process_method_declaration enter (cls=%d)\n", is_class_method);
     skip_whitespace();
 
     /* Read return type */
@@ -652,8 +656,10 @@ static void process_method_declaration(BOOL is_class_method)
                    params[0] ? ", " : "", params);
         }
     } else if (c == '{') {
+        fprintf(stderr, "DEBUG: process_method_declaration calling process_method_definition\n");
         process_method_definition(is_class_method);
     }
+    fprintf(stderr, "DEBUG: process_method_declaration returning (method='%s', params='%s')\n", method_name, params);
 }
 
 /* ========================================================================
@@ -1516,6 +1522,7 @@ static void process_source(void)
         case '@': {
             char keyword[64];
             read_identifier(keyword, sizeof(keyword));
+            fprintf(stderr, "DEBUG: @ case keyword='%s'\n", keyword);
 
             if (strcmp(keyword, "interface") == 0) {
                 process_interface();
@@ -1630,6 +1637,7 @@ static void process_source(void)
             } else {
                 output("@%s", keyword);
             }
+            fprintf(stderr, "DEBUG: @ case done, keyword='%s', in_impl=%d, in_iface=%d\n", keyword, in_implementation, in_interface);
             break;
         }
 
@@ -1797,7 +1805,7 @@ int main(int argc, char *argv[])
     /* Add default MinSTEP include paths */
     {
         const char *minstep_root = getenv("MINSTEP_ROOT");
-        if (!minstep_root) minstep_root = "/workspace/project/MINSTEP";
+        if (!minstep_root) minstep_root = "/usr/lib/objcc/include";
         
         char pathbuf[1024];
         

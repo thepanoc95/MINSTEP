@@ -20,7 +20,7 @@ CPPFLAGS ?=
 LDFLAGS  ?= -static
 
 # Include paths -- kernel headers are under mango/
-INCLUDES = -I. -Imango -Imango/mach -Imango/ipc -Imango/task -Imango/loader
+INCLUDES = -I. -Imango -Imango/mach -Imango/ipc -Imango/task -Imango/loader -Imango/compat
 
 # ========================================================================
 #  ObjC preprocessor and runtime (from Developer/objc/)
@@ -46,7 +46,14 @@ MANGO_C_SRC = mango/main.c \
               mango/mach/mach_port.c \
               mango/mach/ipc.c \
               mango/mach/task.c \
-              mango/loader/mach_loader.c
+              mango/loader/mach_loader.c \
+              mango/ipc/ipc_port.c \
+              mango/ipc/ipc_sched.c \
+              mango/ipc/ipc_entry.c \
+              mango/ipc/ipc_hash.c \
+              mango/ipc/ipc_splay.c \
+              mango/ipc/ipc_init.c \
+              mango/ipc/ipc_stubs.c
 
 # Mango nanokernel -- Objective-C sources (compiled via objcc)
 MANGO_M_SRC = mango/mach/MangoKernel.m \
@@ -61,7 +68,14 @@ MANGO_C_OBJ = build/main.o \
               build/mach_port.o \
               build/ipc.o \
               build/task.o \
-              build/mach_loader.o
+              build/mach_loader.o \
+              build/ipc_port.o \
+              build/ipc_sched.o \
+              build/ipc_entry.o \
+              build/ipc_hash.o \
+              build/ipc_splay.o \
+              build/ipc_init.o \
+              build/ipc_stubs.o
 
 MANGO_M_OBJ = build/MangoKernel.o \
               build/MangoPort.o \
@@ -125,6 +139,27 @@ build/task.o: mango/mach/task.c | build
 
 build/mach_loader.o: mango/loader/mach_loader.c | build
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(INCLUDES) -c -o $@ $<
+
+build/ipc_port.o: mango/ipc/ipc_port.c | build
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(INCLUDES) -Icompat -c -o $@ $<
+
+build/ipc_sched.o: mango/ipc/ipc_sched.c | build
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(INCLUDES) -Icompat -c -o $@ $<
+
+build/ipc_entry.o: mango/ipc/ipc_entry.c | build
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(INCLUDES) -Icompat -c -o $@ $<
+
+build/ipc_hash.o: mango/ipc/ipc_hash.c | build
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(INCLUDES) -Icompat -c -o $@ $<
+
+build/ipc_splay.o: mango/ipc/ipc_splay.c | build
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(INCLUDES) -Icompat -c -o $@ $<
+
+build/ipc_init.o: mango/ipc/ipc_init.c | build
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(INCLUDES) -Icompat -c -o $@ $<
+
+build/ipc_stubs.o: mango/ipc/ipc_stubs.c | build
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(INCLUDES) -Icompat -c -o $@ $<
 
 # Objective-C object files (compiled via objcc preprocessor)
 build/MangoKernel.o: mango/mach/MangoKernel.m | build

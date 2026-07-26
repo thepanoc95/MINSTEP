@@ -212,13 +212,19 @@ mango_task_t *mango_current_task = NULL;
     return KERN_SUCCESS;
 }
 
-- (kern_return_t)launchInit:(const char *)root {
+- (kern_return_t)launchInit:(const char *)root initPath:(const char *)init_path_arg {
     if (!root) return KERN_INVALID_ARGUMENT;
 
     char init_path[1024];
-    snprintf(init_path, sizeof(init_path), "%s/private/init", root);
 
-    klog_info("searching for init: %s\n", init_path);
+    if (init_path_arg && init_path_arg[0]) {
+        strncpy(init_path, init_path_arg, sizeof(init_path) - 1);
+        init_path[sizeof(init_path) - 1] = '\0';
+        klog_info("using init: %s\n", init_path);
+    } else {
+        snprintf(init_path, sizeof(init_path), "%s/private/init", root);
+        klog_info("searching for init: %s\n", init_path);
+    }
 
     if (access(init_path, X_OK) != 0) {
         klog_warn("%s not found or not executable\n", init_path);

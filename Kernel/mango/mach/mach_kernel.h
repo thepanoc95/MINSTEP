@@ -54,8 +54,9 @@ extern mango_kernel_state_t _mango_kernel;
  *  Kernel entry points
  * ----------------------------------------------------------------------- */
 
-/* Main kernel entry (called by boot1's jump2mach) */
-void mango_kernel_main(void);
+/* Main kernel entry (called by boot1's jump2mach).
+ * init_path may be NULL to use default init search. */
+void mango_kernel_main(const char *init_path);
 
 /* Kernel initialization (sets up IPC, tasks, loader) */
 kern_return_t mango_kernel_init(uint32_t boot_flags);

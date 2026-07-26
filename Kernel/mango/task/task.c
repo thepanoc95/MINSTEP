@@ -208,19 +208,25 @@ kern_return_t mango_thread_resume(mango_thread_t *thread)
     return KERN_SUCCESS;
 }
 
-kern_return_t mango_launch_init(const char *userfs_root)
+kern_return_t mango_launch_init(const char *userfs_root, const char *init_path)
 {
     if (!userfs_root) return KERN_INVALID_ARGUMENT;
 
-    char init_path[1024];
-    snprintf(init_path, sizeof(init_path), "%s/private/init", userfs_root);
+    char resolved_path[1024];
 
-    klog_info("searching for init: %s\n", init_path);
+    if (init_path && init_path[0]) {
+        strncpy(resolved_path, init_path, sizeof(resolved_path) - 1);
+        resolved_path[sizeof(resolved_path) - 1] = '\0';
+        klog_info("using init: %s\n", resolved_path);
+    } else {
+        snprintf(resolved_path, sizeof(resolved_path), "%s/private/init", userfs_root);
+        klog_info("searching for init: %s\n", resolved_path);
 
-    if (access(init_path, X_OK) != 0) {
-        klog_warn("%s not found or not executable\n", init_path);
-        klog_notice("falling back to /sbin/init\n");
-        strncpy(init_path, "/sbin/init", sizeof(init_path) - 1);
+        if (access(resolved_path, X_OK) != 0) {
+            klog_warn("%s not found or not executable\n", resolved_path);
+            klog_notice("falling back to /sbin/init\n");
+            strncpy(resolved_path, "/sbin/init", sizeof(resolved_path) - 1);
+        }
     }
 
     mango_task_t *init_task = NULL;
@@ -230,7 +236,7 @@ kern_return_t mango_launch_init(const char *userfs_root)
         return kr;
     }
 
-    strncpy(init_task->binary_path, init_path,
+    strncpy(init_task->binary_path, resolved_path,
             sizeof(init_task->binary_path) - 1);
     strncpy(init_task->userfs_root, userfs_root,
             sizeof(init_task->userfs_root) - 1);
@@ -247,7 +253,7 @@ kern_return_t mango_launch_init(const char *userfs_root)
         char port_str[32];
         snprintf(port_str, sizeof(port_str), "%d", init_task->bootstrap_port);
         setenv("MANGO_BOOTSTRAP_PORT", port_str, 1);
-        execl(init_path, init_path, (char *)NULL);
+        execl(resolved_path, resolved_path, (char *)NULL);
         klog_err("exec init failed: %s\n", strerror(errno));
         _exit(1);
     }

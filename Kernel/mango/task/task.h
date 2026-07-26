@@ -140,8 +140,10 @@ kern_return_t mango_kernel_task_init(void);
  *  Init system
  * ----------------------------------------------------------------------- */
 
-/* Launch the init process from $USERFSROOT/private/init */
-kern_return_t mango_launch_init(const char *userfs_root);
+/* Launch the init process.
+ * If init_path is non-NULL, use it directly.
+ * Otherwise search $USERFSROOT/private/init, then /sbin/init. */
+kern_return_t mango_launch_init(const char *userfs_root, const char *init_path);
 
 #ifdef __cplusplus
 }

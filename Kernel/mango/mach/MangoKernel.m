@@ -1,3 +1,19 @@
+/*
+ * @BSD_LICENSE_HEADER BEGIN
+ * Copyright (c) 2026, thepanoc95 All rights reserved.
+
+  * Redistribution and use in source and binary forms, with or without modification, are permitted provided that the following conditions are met:
+  *  * Redistributions of source code must retain the above copyright notice, this list of conditions and the following disclaimer.
+  *  * Redistributions in binary form must reproduce the above copyright notice, this list of conditions and the following disclaimer in the documentation and/or other materials provided with the distribution.
+  *  * All advertising materials mentioning features or use of this software must display the following acknowledgement: This product includes software developed by thepanoc95.
+  *  * Neither the name of thepanoc95 nor the names of its contributors may be used to endorse or promote products derived from this software without specific prior written permission.
+  *
+  * THIS SOFTWARE IS PROVIDED BY THEPANOC95 AS IS AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THEPANOC95 BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * THIS SOFTWARE IS PROVIDED BY THEPANOC95 AS IS AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THEPANOC95 BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.[6]
+ *
+ * @BSD_LICENSE_HEADER END
+ */
+
 #objc
 /*
  * mango/mach/MangoKernel.m
@@ -21,6 +37,7 @@
 #include <sys/wait.h>
 #include <termios.h>
 #include <errno.h>
+#include <sys/stat.h>
 
 @implementation MangoKernel
 
@@ -184,13 +201,19 @@
     }
 }
 
-- (kern_return_t)launchInit:(const char *)root {
+- (kern_return_t)launchInit:(const char *)root initPath:(const char *)init_path_arg {
     if (!root) return KERN_INVALID_ARGUMENT;
 
     char init_path[1024];
-    snprintf(init_path, sizeof(init_path), "%s/private/init", root);
 
-    klog_info("searching for init: %s\n", init_path);
+    if (init_path_arg && init_path_arg[0]) {
+        strncpy(init_path, init_path_arg, sizeof(init_path) - 1);
+        init_path[sizeof(init_path) - 1] = '\0';
+        klog_info("using init: %s\n", init_path);
+    } else {
+        snprintf(init_path, sizeof(init_path), "%s/private/init", root);
+        klog_info("searching for init: %s (root=%s)\n", init_path, root);
+    }
 
     if (access(init_path, F_OK) != 0) {
         klog_warn("%s does not exist (errno=%d: %s)\n", init_path, errno, strerror(errno));
@@ -251,7 +274,7 @@
 
 static MangoKernel *_shared_kernel = nil;
 
-void mango_kernel_main(void)
+void mango_kernel_main(const char *init_path)
 {
     _shared_kernel = [MangoKernel new];
 
@@ -274,10 +297,36 @@ void mango_kernel_main(void)
     }
 
     if (!(flags & MANGO_BOOT_SINGLE_USER)) {
-        const char *root = [_shared_kernel userfsRoot];
-        kr = [_shared_kernel launchInit:root];
-        if (kr != KERN_SUCCESS) {
-            klog_warn("init launch failed (%d)\n", kr);
+        const char *root = objc_msgSend(_shared_kernel, sel_registerName("userfsRoot"));
+        if (!root) root = "/";
+
+        char resolved[1024];
+        if (init_path && init_path[0]) {
+            strncpy(resolved, init_path, sizeof(resolved) - 1);
+            resolved[sizeof(resolved) - 1] = '\0';
+            klog_info("using init: %s\n", resolved);
+        } else {
+            snprintf(resolved, sizeof(resolved), "%s/private/init", root);
+            klog_info("searching for init: %s\n", resolved);
+            if (access(resolved, X_OK) != 0) {
+                klog_warn("%s not found or not executable\n", resolved);
+                klog_notice("falling back to /sbin/init\n");
+                strncpy(resolved, "/sbin/init", sizeof(resolved) - 1);
+            }
+        }
+
+        pid_t pid = fork();
+        if (pid < 0) {
+            klog_err("fork for init failed: %s\n", strerror(errno));
+        } else if (pid == 0) {
+            setenv("USERFSROOT", root, 1);
+            execl(resolved, resolved, (char *)NULL);
+            klog_err("exec init failed: %s\n", strerror(errno));
+            ((void(*)(int))_exit)(1);
+        } else {
+            _init_pid = pid;
+            _mango_kernel_init_pid = pid;
+            klog_info("init launched (pid %d)\n", pid);
         }
     }
 

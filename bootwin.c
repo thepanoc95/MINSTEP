@@ -9,43 +9,6 @@
 #define MARGIN_X 4
 #define HEADER_HEIGHT 2
 
-// Array simulating the exact visual log text from your image
-const char *mach_boot_lines[] = {
-    "physical memory = 256.00 megabytes.",
-    "using 255 buffers containing 1.99 megabytes of memory",
-    "available memory = 248.87 megabytes. vm_page_free_count = 7c70",
-    "PnP: Plug and Play support enabled",
-    "ISA/EISA bus support enabled",
-    "PCI Ver=2.10 BusCount=1 Features=[ BIOS16 CM1 ]",
-    "Found PCI 2.0 device: ID=0x12378086 at Dev=0 Func=0 Bus=0",
-    "Found PCI 2.0 device: ID=0x70008086 at Dev=1 Func=0 Bus=0",
-    "Found PCI 2.0 device: ID=0x70108086 at Dev=1 Func=1 Bus=0",
-    "Found PCI 2.0 device: ID=0xcafed0ee at Dev=2 Func=0 Bus=0",
-    "Found PCI 2.1 device: ID=0x100e8086/0x001e8086 at Dev=3 Func=0 Bus=0",
-    "Found PCI 2.0 device: ID=0xcafe80ee at Dev=4 Func=0 Bus=0",
-    "Found PCI 2.0 device: ID=0x71138086 at Dev=7 Func=0 Bus=0",
-    "PCI bus support enabled",
-    "ISA bus",
-    "DriverKit version 420",
-    "hc0: device detected at port 0x1f0 irq 14",
-    "hc0: Checking for ATA drive 0... Detected",
-    "hc0: Checking for ATA drive 1...",
-    "hc0: Checking for ATAPI drive 1...",
-    "hc0: Resetting drives...",
-    "Registering: hc0",
-    "hd0: VBOX HARDDISK 1.0",
-    "hd0: 4161 cylinders, 16 heads, 63 spt (disk geometry)",
-    "hd0: using multisector (128) transfers.",
-    "Registering: hd0",
-    "hd0: Device Block Size: 512 bytes",
-    "hd0: Device Capacity: 2047 MB",
-    "hd0: Disk Label: Disk",
-    "hc1: device detected at port 0x170 irq 15",
-    "hc1: Checking for ATA drive 0...",
-    "hc1: Checking for ATAPI drive 0... Detected",
-    NULL
-};
-
 void run_mach_binary() {
     int pipefd[2];
     if (pipe(pipefd) == -1) return;

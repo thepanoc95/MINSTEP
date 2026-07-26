@@ -105,7 +105,7 @@ private real Map(p,n,x)
   return (slope*x + (p[i].c2 - slope*p[i].c1));
 }
 
-#ifndef !cEXPORT
+#if !cEXPORT
 private PSLock()
 {
   real x,y;

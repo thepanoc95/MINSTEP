@@ -10,11 +10,13 @@
 const char *boot1ver = "v1.0.0-rc1";
 
 /* Forward declaration -- implemented in mach.c */
-void jump2mach(void);
+void jump2mach(const char *kernel_path);
 
 #define BOOT1_VERSION boot1ver
 #define MAX_INPUT 1024
 #define PROMPT "boot: "
+
+static const char *opt_kernel_path = NULL;
 
 struct termios orig_termios;
 
@@ -65,17 +67,26 @@ void MainPrompt(void)
                     // jump2mach(verbose_);
                     break;
                 } else if (strcmp(buffer, "?") == 0) {
-                    printf("\nAdvanced Options:\n  -v\tDiagnostic boot\n  -s\tSingle-user mode\n\n");
+                    printf("\nAdvanced Options:\n  -v\tDiagnostic boot\n  -s\tSingle-user mode\n  -kernel <file>\tLoad specified kernel binary\n\n");
                     memset(buffer, 0, sizeof(buffer));
                     buf_idx = 0;
                     fprintf(stderr, "%s", PROMPT);
                     fflush(stderr);
+                } else if (strncmp(buffer, "-kernel ", 8) == 0) {
+                    const char *path = buffer + 8;
+                    while (*path == ' ') path++;
+                    if (strlen(path) > 0) {
+                        opt_kernel_path = path;
+                        jump2mach(opt_kernel_path);
+                    } else {
+                        fprintf(stderr, "Usage: -kernel <filename>\n");
+                    }
+                    break;
                 } else {
                     if (strlen(buffer) > 0) {
-                        // jump2mach(boot_args("%lld"));
-			            perror("Not Implemented!\n");
+                        perror("Not Implemented!\n");
                     } else {
-                        jump2mach();
+                        jump2mach(opt_kernel_path);
                     }
                     break;
                 }
@@ -141,7 +152,13 @@ void getMachineType(void)
     printf("[boot1] INFO: sys.machine is %s\n", sys_info.machine);
 }
 
-int main() {
+int main(int argc, char *argv[]) {
+    for (int i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "-kernel") == 0 && i + 1 < argc) {
+            opt_kernel_path = argv[++i];
+        }
+    }
+
     printf("MINSTEP boot1 version %s \n", BOOT1_VERSION);
     printf(".......\n");
     size_memory();

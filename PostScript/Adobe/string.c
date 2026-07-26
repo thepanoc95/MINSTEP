@@ -184,7 +184,7 @@ private character DigitEncode(x)
   return ('A'+x);
 }
 
-typedef unsigned integer CARDINAL;
+typedef unsigned long CARDINAL;
 
 private NumEncode(s,n,r)
 	string s; CARDINAL n; cardinal r;

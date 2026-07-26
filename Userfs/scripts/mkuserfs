@@ -1,0 +1,510 @@
+#!/bin/bash
+#
+# mkuserfs — Create a MINSTEP Userfs filesystem tarball
+#            with NeXTSTEP-like directory naming conventions
+#
+# Structure created:
+#   /Apps            — Default user applications
+#   /Admin           — Default administrator applications
+#   /Developer       — Developer tools & headers
+#   /me              — Default user home stub
+#   /bin             — Essential user binaries
+#   /sbin            — System/admin binaries
+#   /etc             — System configuration
+#   /Libraries       — Shared libraries & Frameworks
+#   /private         — Private system data (/private/init, etc.)
+#   /private/etc     — Private system configs (symlinked from /etc on some setups)
+#   /private/var     — Variable runtime data (symlinked from /var)
+#   /var             — Variable data (/var/NX_SYSVER.SYS, logs, etc.)
+#   /mach            — Kernel image (provided via -k)
+#   /vmunix          — Symlink → /mach
+#   /sdmach          — Symlink → mach
+#   /osboot.bin      — Bootloader image (provided via -b)
+#
+# Usage:
+#   mkuserfs -k KERNEL -b BOOTLOADER -m MACHINE \
+#            [-a ADMIN_APPS_DIR] [-u USER_APPS_DIR] \
+#            [-l LIBS_DIR] [-d DEV_DIR] \
+#            [-i INIT_SCRIPT] [-v NX_VERSION] \
+#            [-s SBIN_DIR] [-e BIN_DIR] [-c ETC_DIR] \
+#            [-o OUTPUT] [-h]
+#
+
+set -euo pipefail
+
+PROGNAME="$(basename "$0")"
+VERSION="1.0.0"
+
+# ─── Defaults ────────────────────────────────────────────────────────────────
+KERNEL=""
+BOOTLOADER=""
+MACHINE=""
+ADMIN_APPS_DIR=""
+USER_APPS_DIR=""
+LIBS_DIR=""
+DEV_DIR=""
+INIT_SCRIPT=""
+NX_VERSION="1.0"
+SBIN_DIR=""
+BIN_DIR=""
+ETC_DIR=""
+OUTPUT="userfs.tar"
+
+# ─── Helpers ─────────────────────────────────────────────────────────────────
+
+usage() {
+    cat <<EOF
+Usage: $PROGNAME [OPTIONS]
+
+Create a MINSTEP Userfs filesystem tarball with NeXTSTEP-like layout.
+
+Required options:
+  -k KERNEL        Path to kernel image (installed as /mach)
+  -b BOOTLOADER    Path to bootloader image (installed as /osboot.bin)
+  -m MACHINE       Target machine identifier (e.g. m68k, i386, ppc, sparc)
+
+Optional options:
+  -a ADMIN_APPS    Directory with admin apps to install into /Admin
+  -u USER_APPS     Directory with user apps to install into /Apps
+  -l LIBS_DIR      Directory with Libraries/Frameworks for /Libraries
+  -d DEV_DIR       Directory with developer tools for /Developer
+  -i INIT_SCRIPT   Path to init script (installed as /private/init)
+  -v NX_VERSION    NeXT/MINSTEP system version string [default: $NX_VERSION]
+  -s SBIN_DIR      Directory with system binaries for /sbin
+  -e BIN_DIR       Directory with user binaries for /bin
+  -c ETC_DIR       Directory with config files for /etc
+  -o OUTPUT        Output tarball filename [default: $OUTPUT]
+  -h               Show this help message
+
+Output:
+  A compressed tar archive containing the full Userfs tree.
+
+Examples:
+  $PROGNAME -k /build/mach -b /build/osboot.bin -m i386 \
+            -a /build/admin_apps -u /build/user_apps \
+            -l /build/libs -i /build/init -v 3.3 -o minstep-userfs.tar.gz
+EOF
+    exit "${1:-0}"
+}
+
+die() {
+    echo "$PROGNAME: ERROR: $*" >&2
+    exit 1
+}
+
+warn() {
+    echo "$PROGNAME: WARNING: $*" >&2
+}
+
+info() {
+    echo "$PROGNAME: $*" >&2
+}
+
+# ─── Parse arguments ─────────────────────────────────────────────────────────
+
+while getopts "k:b:m:a:u:l:d:i:v:s:e:c:o:h" opt; do
+    case "$opt" in
+        k) KERNEL="$OPTARG" ;;
+        b) BOOTLOADER="$OPTARG" ;;
+        m) MACHINE="$OPTARG" ;;
+        a) ADMIN_APPS_DIR="$OPTARG" ;;
+        u) USER_APPS_DIR="$OPTARG" ;;
+        l) LIBS_DIR="$OPTARG" ;;
+        d) DEV_DIR="$OPTARG" ;;
+        i) INIT_SCRIPT="$OPTARG" ;;
+        v) NX_VERSION="$OPTARG" ;;
+        s) SBIN_DIR="$OPTARG" ;;
+        e) BIN_DIR="$OPTARG" ;;
+        c) ETC_DIR="$OPTARG" ;;
+        o) OUTPUT="$OPTARG" ;;
+        h) usage 0 ;;
+        *) usage 1 ;;
+    esac
+done
+shift $((OPTIND - 1))
+
+# ─── Validate required arguments ─────────────────────────────────────────────
+
+[[ -z "$KERNEL" ]]      && die "Missing required -k KERNEL argument. Use -h for help."
+[[ -z "$BOOTLOADER" ]]  && die "Missing required -b BOOTLOADER argument. Use -h for help."
+[[ -z "$MACHINE" ]]     && die "Missing required -m MACHINE argument. Use -h for help."
+[[ ! -f "$KERNEL" ]]    && die "Kernel file not found: $KERNEL"
+[[ ! -f "$BOOTLOADER" ]]&& die "Bootloader file not found: $BOOTLOADER"
+
+# ─── Create staging root ─────────────────────────────────────────────────────
+
+STAGING="$(mktemp -d "${TMPDIR:-/tmp}/mkuserfs.XXXXXX")"
+ROOT="$STAGING/rootfs"
+trap 'rm -rf "$STAGING"' EXIT
+
+info "Creating MINSTEP Userfs tree at $ROOT for machine=$MACHINE ..."
+
+# ─── Build directory structure ───────────────────────────────────────────────
+
+mkdir -p "$ROOT"/{Apps,me,Admin,Developer,bin,sbin,etc}
+mkdir -p "$ROOT"/Libraries/{Frameworks,lib,headers}
+mkdir -p "$ROOT"/private/{etc,var,tmp,log}
+mkdir -p "$ROOT"/var/{log,run,tmp,spool,db}
+mkdir -p "$ROOT"/me/{Desktop,Documents,Library,Apps}
+
+# /var → /private/var  (NeXTSTEP convention: /var is often a symlink to /private/var)
+# /etc → /private/etc  (same convention)
+# We create real dirs and then add compatibility symlinks
+
+ln -sfn private/var  "$ROOT/var"
+ln -sfn private/etc  "$ROOT/etc"
+
+# Actually, on NeXTSTEP, /private/var and /private/etc are the REAL locations,
+# and /var and /etc are symlinks INTO /private.  Let's restructure:
+
+rm -rf "$ROOT/var" "$ROOT/etc"
+
+# Real variable/config data lives under /private
+mkdir -p "$ROOT"/private/var/{log,run,tmp,spool,db}
+mkdir -p "$ROOT"/private/etc
+
+# Top-level /var and /etc are symlinks into /private (NeXTSTEP convention)
+ln -sfn private/var  "$ROOT/var"
+ln -sfn private/etc  "$ROOT/etc"
+
+# ─── Install kernel ──────────────────────────────────────────────────────────
+
+info "Installing kernel: $KERNEL → /mach"
+cp "$KERNEL" "$ROOT/mach"
+chmod 0444 "$ROOT/mach"
+chmod +x "$ROOT/mach"
+
+# /vmunix → /mach  (traditional Unix naming compatibility)
+ln -sfn mach "$ROOT/vmunix"
+
+# /sdmach → mach   (secondary/SD kernel symlink, NeXTSTEP convention)
+ln -sfn mach "$ROOT/sdmach"
+
+# ─── Install bootloader ─────────────────────────────────────────────────────
+
+info "Installing bootloader: $BOOTLOADER → /boot1"
+cp "$BOOTLOADER" "$ROOT/boot1"
+chmod 0444 "$ROOT/boot1"
+chmod +x "$ROOT/boot1"
+
+# ─── Install /private/init ──────────────────────────────────────────────────
+
+COMPILED_INIT="$(dirname "$0")/../init"
+
+if [[ -n "$INIT_SCRIPT" ]]; then
+    [[ ! -f "$INIT_SCRIPT" ]] && die "Init binary not found: $INIT_SCRIPT"
+    info "Installing init: $INIT_SCRIPT → /private/init"
+    cp "$INIT_SCRIPT" "$ROOT/private/init"
+    chmod 0555 "$ROOT/private/init"
+elif [[ -f "$COMPILED_INIT" ]]; then
+    info "Installing compiled init: $COMPILED_INIT → /private/init"
+    cp "$COMPILED_INIT" "$ROOT/private/init"
+    chmod 0555 "$ROOT/private/init"
+else
+    die "No init binary found. Build it first: cd Userfs && make"
+fi
+
+# ─── Install /var/NX_SYSVER.SYS ──────────────────────────────────────────────
+
+info "Writing /private/var/NX_SYSVER.SYS with version=$NX_VERSION"
+cat > "$ROOT/private/var/NX_SYSVER.SYS" <<SYSVER_EOF
+MINSTEP Userfs System Version File
+====================================
+NX_SYSVER=${NX_VERSION}
+MACHINE=${MACHINE}
+KERNEL=$(basename "$KERNEL")
+BOOTLOADER=$(basename "$BOOTLOADER")
+BUILD_DATE=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
+BUILD_HOST=$(hostname 2>/dev/null || echo 'unknown')
+FS_TYPE=MINSTEP_Userfs
+SYSVER_EOF
+chmod 0444 "$ROOT/private/var/NX_SYSVER.SYS"
+
+# The symlink /var → /private/var means this is also accessible as /var/NX_SYSVER.SYS
+
+# ─── Install /etc/machine ────────────────────────────────────────────────────
+
+info "Writing /private/etc/machine"
+cat > "$ROOT/private/etc/machine" <<MACHINE_EOF
+ ${MACHINE}
+MACHINE_EOF
+chmod 0444 "$ROOT/private/etc/machine"
+
+# ─── Install /etc/fstab stub ─────────────────────────────────────────────────
+
+cat > "$ROOT/private/etc/fstab" <<FSTAB_EOF
+# MINSTEP /etc/fstab — ${MACHINE}
+# Filesystem    Mount Point      Type    Options         Dump    Pass
+proc            /proc            proc    defaults        0       0
+sysfs           /sys             sysfs   defaults        0       0
+tmpfs           /private/tmp     tmpfs   defaults        0       0
+tmpfs           /private/var/run tmpfs   defaults        0       0
+FSTAB_EOF
+chmod 0644 "$ROOT/private/etc/fstab"
+
+# ─── Install admin applications ──────────────────────────────────────────────
+
+if [[ -n "$ADMIN_APPS_DIR" ]]; then
+    [[ ! -d "$ADMIN_APPS_DIR" ]] && die "Admin apps directory not found: $ADMIN_APPS_DIR"
+    info "Installing admin applications: $ADMIN_APPS_DIR → /Admin"
+    # Copy each .app bundle or binary
+    for item in "$ADMIN_APPS_DIR"/*; do
+        [[ -e "$item" ]] || continue
+        destname="$(basename "$item")"
+        cp -a "$item" "$ROOT/Admin/$destname"
+    done
+else
+    info "No admin applications specified; creating minimal /Admin stubs"
+    mkdir -p "$ROOT/Admin/Preferences.app"
+    mkdir -p "$ROOT/Admin/NetManager.app"
+    mkdir -p "$ROOT/Admin/DiskManager.app"
+    mkdir -p "$ROOT/Admin/UserManager.app"
+    # Stub Info.plist for each
+    for app in Preferences NetManager DiskManager UserManager; do
+        mkdir -p "$ROOT/Admin/${app}.app/Resources"
+        cat > "$ROOT/Admin/${app}.app/Resources/Info.plist" <<PLIST_EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<dict>
+    <key>CFBundleName</key>        <string>${app}</string>
+    <key>CFBundleIdentifier</key>  <string>com.minstep.admin.${app}</string>
+    <key>CFBundleVersion</key>     <string>${NX_VERSION}</string>
+    <key>NSHumanReadableCopyright</key> <string>MINSTEP ${NX_VERSION}</string>
+</dict>
+PLIST_EOF
+    done
+fi
+
+# ─── Install user applications ───────────────────────────────────────────────
+
+if [[ -n "$USER_APPS_DIR" ]]; then
+    [[ ! -d "$USER_APPS_DIR" ]] && die "User apps directory not found: $USER_APPS_DIR"
+    info "Installing user applications: $USER_APPS_DIR → /Apps"
+    for item in "$USER_APPS_DIR"/*; do
+        [[ -e "$item" ]] || continue
+        destname="$(basename "$item")"
+        cp -a "$item" "$ROOT/Apps/$destname"
+    done
+else
+    info "No user applications specified; creating minimal /Apps stubs"
+    mkdir -p "$ROOT/Apps/Terminal.app"
+    mkdir -p "$ROOT/Apps/Edit.app"
+    mkdir -p "$ROOT/Apps/FileViewer.app"
+    mkdir -p "$ROOT/Apps/Mail.app"
+    mkdir -p "$ROOT/Apps/Calculator.app"
+    for app in Terminal Edit FileViewer Mail Calculator; do
+        mkdir -p "$ROOT/Apps/${app}.app/Resources"
+        cat > "$ROOT/Apps/${app}.app/Resources/Info.plist" <<PLIST_EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<dict>
+    <key>CFBundleName</key>        <string>${app}</string>
+    <key>CFBundleIdentifier</key>  <string>com.minstep.apps.${app}</string>
+    <key>CFBundleVersion</key>     <string>${NX_VERSION}</string>
+    <key>NSHumanReadableCopyright</key> <string>MINSTEP ${NX_VERSION}</string>
+</dict>
+PLIST_EOF
+    done
+fi
+
+# ─── Install developer tools ────────────────────────────────────────────────
+
+if [[ -n "$DEV_DIR" ]]; then
+    [[ ! -d "$DEV_DIR" ]] && die "Developer directory not found: $DEV_DIR"
+    info "Installing developer tools: $DEV_DIR → /Developer"
+    for item in "$DEV_DIR"/*; do
+        [[ -e "$item" ]] || continue
+        destname="$(basename "$item")"
+        cp -a "$item" "$ROOT/Developer/$destname"
+    done
+else
+    info "No developer tools specified; creating /Developer stubs"
+    mkdir -p "$ROOT/Developer"/{Headers,Makefiles,Tools,Projects}
+fi
+
+# ─── Install Libraries/Frameworks ────────────────────────────────────────────
+
+if [[ -n "$LIBS_DIR" ]]; then
+    [[ ! -d "$LIBS_DIR" ]] && die "Libraries directory not found: $LIBS_DIR"
+    info "Installing Libraries/Frameworks: $LIBS_DIR → /Libraries"
+    # Copy Frameworks bundles
+    if [[ -d "$LIBS_DIR/Frameworks" ]]; then
+        for fw in "$LIBS_DIR/Frameworks"/*; do
+            [[ -e "$fw" ]] || continue
+            cp -a "$fw" "$ROOT/Libraries/Frameworks/$(basename "$fw")"
+        done
+    fi
+    # Copy shared libs
+    if [[ -d "$LIBS_DIR/lib" ]]; then
+        for lib in "$LIBS_DIR/lib"/*; do
+            [[ -e "$lib" ]] || continue
+            cp -a "$lib" "$ROOT/Libraries/lib/$(basename "$lib")"
+        done
+    fi
+    # Copy headers
+    if [[ -d "$LIBS_DIR/headers" ]]; then
+        for hdr in "$LIBS_DIR/headers"/*; do
+            [[ -e "$hdr" ]] || continue
+            cp -a "$hdr" "$ROOT/Libraries/headers/$(basename "$hdr")"
+        done
+    fi
+    # Flat copy anything else directly
+    for item in "$LIBS_DIR"/*; do
+        [[ -e "$item" ]] || continue
+        name="$(basename "$item")"
+        [[ "$name" == "Frameworks" || "$name" == "lib" || "$name" == "headers" ]] && continue
+        cp -a "$item" "$ROOT/Libraries/$name"
+    done
+else
+    info "No Libraries specified; creating /Libraries stubs"
+    # Create minimal NeXTSTEP-style Framework stubs
+    for fw in Foundation AppKit DisplayKit; do
+        mkdir -p "$ROOT/Libraries/Frameworks/${fw}.framework"/{Headers,Resources}
+        cat > "$ROOT/Libraries/Frameworks/${fw}.framework/Resources/Info.plist" <<PLIST_EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<dict>
+    <key>CFBundleName</key>        <string>${fw}</string>
+    <key>CFBundleIdentifier</key>  <string>com.minstep.framework.${fw}</string>
+    <key>CFBundleVersion</key>     <string>${NX_VERSION}</string>
+</dict>
+PLIST_EOF
+    done
+fi
+
+# ─── Install /sbin binaries ──────────────────────────────────────────────────
+
+if [[ -n "$SBIN_DIR" ]]; then
+    [[ ! -d "$SBIN_DIR" ]] && die "sbin directory not found: $SBIN_DIR"
+    info "Installing system binaries: $SBIN_DIR → /sbin"
+    for bin in "$SBIN_DIR"/*; do
+        [[ -f "$bin" ]] || continue
+        cp -a "$bin" "$ROOT/sbin/$(basename "$bin")"
+    done
+else
+    info "Creating minimal /sbin stubs"
+    # Create stub shell scripts for essential sbin tools
+    for tool in mount umount swapon swapoff reboot halt shutdown init fsck mkfs; do
+        cat > "$ROOT/sbin/$tool" <<TOOL_EOF
+#!/bin/sh
+# MINSTEP /sbin/${tool} stub — machine=${MACHINE}
+echo "${tool}: not implemented (stub)"
+exit 0
+TOOL_EOF
+        chmod 0555 "$ROOT/sbin/$tool"
+    done
+fi
+
+# ─── Install /bin binaries ───────────────────────────────────────────────────
+
+if [[ -n "$BIN_DIR" ]]; then
+    [[ ! -d "$BIN_DIR" ]] && die "bin directory not found: $BIN_DIR"
+    info "Installing user binaries: $BIN_DIR → /bin"
+    for bin in "$BIN_DIR"/*; do
+        [[ -f "$bin" ]] || continue
+        cp -a "$bin" "$ROOT/bin/$(basename "$bin")"
+    done
+else
+    info "Creating minimal /bin stubs"
+    for tool in sh cat ls cp mv rm mkdir rmdir echo pwd date env hostname ln chmod chown; do
+        cat > "$ROOT/bin/$tool" <<TOOL_EOF
+#!/bin/sh
+# MINSTEP /bin/${tool} stub — machine=${MACHINE}
+echo "${tool}: not implemented (stub)"
+exit 0
+TOOL_EOF
+        chmod 0555 "$ROOT/bin/$tool"
+    done
+fi
+
+# ─── Install /etc config files ──────────────────────────────────────────────
+
+if [[ -n "$ETC_DIR" ]]; then
+    [[ ! -d "$ETC_DIR" ]] && die "etc directory not found: $ETC_DIR"
+    info "Installing config files: $ETC_DIR → /private/etc"
+    for cfg in "$ETC_DIR"/*; do
+        [[ -e "$cfg" ]] || continue
+        cp -a "$cfg" "$ROOT/private/etc/$(basename "$cfg")"
+    done
+else
+    info "Creating minimal /private/etc stubs"
+    cat > "$ROOT/private/etc/passwd" <<PASSWD_EOF
+root:x:0:0:MINSTEP Admin:/Admin:/bin/sh
+admin:x:1:1:MINSTEP Administrator:/Admin:/bin/sh
+me:x:1000:1000:MINSTEP User:/me:/bin/sh
+PASSWD_EOF
+    chmod 0644 "$ROOT/private/etc/passwd"
+
+    cat > "$ROOT/private/etc/group" <<GROUP_EOF
+root:x:0:
+admin:x:1:admin
+wheel:x:10:root,admin
+users:x:1000:me
+GROUP_EOF
+    chmod 0644 "$ROOT/private/etc/group"
+
+    cat > "$ROOT/private/etc/hosts" <<HOSTS_EOF
+127.0.0.1       localhost minstep
+::1             localhost minstep
+HOSTS_EOF
+    chmod 0644 "$ROOT/private/etc/hosts"
+
+    cat > "$ROOT/private/etc/resolv.conf" <<RESOLV_EOF
+# MINSTEP resolv.conf
+nameserver 127.0.0.1
+RESOLV_EOF
+    chmod 0644 "$ROOT/private/etc/resolv.conf"
+fi
+
+# ─── Write filesystem manifest ───────────────────────────────────────────────
+
+info "Writing /private/MANIFEST"
+(
+    cd "$ROOT"
+    find . -not -type d | sort | while read -r f; do
+        f="${f#./}"
+        mode="$(stat -c '%a' "$f" 2>/dev/null || stat -f '%Lp' "$f" 2>/dev/null || echo '???')"
+        size="$(stat -c '%s' "$f" 2>/dev/null || stat -f '%z' "$f" 2>/dev/null || echo '???')"
+        type="$(stat -c '%F' "$f" 2>/dev/null || echo 'file')"
+        printf "%-10s %-8s %-10s %s\n" "$type" "$mode" "$size" "$f"
+    done
+) > "$ROOT/private/MANIFEST"
+chmod 0444 "$ROOT/private/MANIFEST"
+
+# ─── Set ownership ───────────────────────────────────────────────────────────
+
+# Try to set reasonable ownership; ignore errors if not root
+(
+    cd "$ROOT"
+    chown -R root:wheel . 2>/dev/null || chown -R 0:0 . 2>/dev/null || true
+    chown -R 1000:1000 me 2>/dev/null || true
+    chown -R 0:10 sbin mach osboot.bin 2>/dev/null || true
+)
+
+# ─── Show summary ────────────────────────────────────────────────────────────
+
+info "=== MINSTEP Userfs Layout ==="
+(
+    cd "$ROOT"
+    find . | sort | head -80
+) | sed 's/^./  /' >&2
+info "=============================="
+
+TOTAL_SIZE="$(du -sh "$ROOT" 2>/dev/null | cut -f1 || echo 'unknown')"
+info "Total staging size: $TOTAL_SIZE"
+
+# ─── Create tarball ──────────────────────────────────────────────────────────
+
+info "Creating tarball: $OUTPUT"
+(
+    cd "$ROOT"
+    tar --numeric-owner --owner=0 --group=0 \
+        -czf "$STAGING/$OUTPUT" .
+)
+
+# Move output to the current working directory
+FINAL_OUTPUT="$(pwd)/$OUTPUT"
+mv "$STAGING/$OUTPUT" "$FINAL_OUTPUT"
+
+TARBALL_SIZE="$(du -sh "$FINAL_OUTPUT" 2>/dev/null | cut -f1 || echo 'unknown')"
+info "Tarball created: $FINAL_OUTPUT ($TARBALL_SIZE)"
+info "Machine: $MACHINE  Version: $NX_VERSION  Kernel: $(basename "$KERNEL")  Bootloader: $(basename "$BOOTLOADER")"
+
+exit 0

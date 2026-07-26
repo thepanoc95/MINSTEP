@@ -165,18 +165,14 @@ private procedure PSStart()
 
 #if !cRELEASE
 private integer monitoring;
-extern BEGIN();
-extern END();
 
 private procedure PSMonitor()
 {
   if (monitoring < 0){
     sprintf(Pbuf,"Performance monitoring -- on.\n"); EPRINT();
     monitoring = 0;
-    monstartup(BEGIN,END);
     return;}
   if (monitoring == 0){
-    monitor(0);
     sprintf(Pbuf,"Performance monitoring -- off.\n"); EPRINT();
     monitoring = 1;
     return;}
@@ -186,7 +182,7 @@ private procedure PSMonitor()
 }
 #endif !cRELEASE
 
-struct{int (*func)()} saveDisable;
+void (*saveDisable)();
 
 private int ccExecHandler(i)
 	int i;
@@ -196,11 +192,11 @@ private int ccExecHandler(i)
   signal(SIGINT,ccExecHandler);
 }
 
-private int ccInputHandler(i) int i; {PRINTCHAR('\n'); raise(PS_STOPEXEC,"");}
+private int ccInputHandler(i) int i; {PRINTCHAR('\n'); PS_RAISE(PS_STOPEXEC,"");}
 
 private int ccQuitHandler(i) int i; {signal(SIGINT,ccQuitHandler);}
 
-public DisableCC() {saveDisable.func = signal(SIGINT,ccQuitHandler);}
+public DisableCC() {saveDisable = signal(SIGINT,ccQuitHandler);}
 
 public EnableCC() {signal(SIGINT,saveDisable);}
 
@@ -225,7 +221,7 @@ private procedure PSUndef()
   so.length = MIN(MAXnameLength-1,so.length);
   VMGetText(so,s);
   sprintf(Pbuf,"Undefined name: %s\n",s); EPRINT();
-  raise(PS_STOPEXEC,"");
+  PS_RAISE(PS_STOPEXEC,"");
 #else !cRELEASE
   CantHappen();
 #endif !cRELEASE
@@ -385,6 +381,9 @@ extern char setsav[]; extern int *nd;
 extern int *curbrk;
 #endif cSUN
 extern int end;
+
+/* Stub for VAX runtime library function not needed on Linux */
+public LIBdatainit() {}
 
 main(argc, argv) /* here is where PostScript execution begins */
 	int argc; char *argv[];

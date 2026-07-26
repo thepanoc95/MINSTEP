@@ -20,6 +20,8 @@ End Edit History.
 #include "fonts.h"
 #include "graphicspriv.h"
 
+private InternalBuildChar();
+
 private nameObject BCcmdName, strokewidthname, encodingname, charstringsname,
                    painttypename, fonttypename, fontpathname,
 		   privatename, bluename, minfeaturename;

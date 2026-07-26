@@ -17,7 +17,7 @@
 CC       = /usr/bin/gcc
 CFLAGS   ?= -Wall -Wextra -g -O2
 CPPFLAGS ?=
-LDFLAGS  ?=
+LDFLAGS  ?= -static
 
 # Include paths -- kernel headers are under mango/
 INCLUDES = -I. -Imango -Imango/mach -Imango/ipc -Imango/task -Imango/loader
@@ -37,7 +37,7 @@ OBJCC_INCLUDES = -I . -I mango -I mango/mach -I mango/ipc -I mango/task -I mango
 
 # boot
 BOOT_SRC  = boot1.c mach.c
-BOOT_BIN  = osboot1
+BOOT_BIN  = boot1
 
 # Mango nanokernel -- pure C sources
 MANGO_C_SRC = mango/main.c \
@@ -68,7 +68,7 @@ MANGO_M_OBJ = build/MangoKernel.o \
               build/MangoTask.o \
               build/MangoIPC.o
 
-MANGO_BIN  = mango-kernel
+MANGO_BIN  = mach
 
 # ========================================================================
 #  Build targets
@@ -103,6 +103,10 @@ build:
 # Pure C object files
 build/mach.o: mach.c | build
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(INCLUDES) -c -o $@ $<
+
+# Build the ObjC runtime library from Developer/objc
+$(OBJCCRT):
+	$(MAKE) -C $(CURDIR)/../Developer/objc libobjcrt
 
 build/main.o: mango/main.c | build
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(INCLUDES) -c -o $@ $<
@@ -142,15 +146,15 @@ $(MANGO_BIN): $(MANGO_M_OBJ) $(MANGO_C_OBJ) $(OBJCCRT)
 # -- run ------------------------------------------------------------------
 
 run: boot
-	./osboot1
+	./boot1
 
 # -- install --------------------------------------------------------------
 
 install: all
 	@echo "Installing to $(DESTDIR)$(PREFIX)/bin..."
 	install -d $(DESTDIR)$(PREFIX)/bin 2>/dev/null || true
-	install -m 755 $(BOOT_BIN) $(DESTDIR)$(PREFIX)/bin/osboot1
-	install -m 755 $(MANGO_BIN) $(DESTDIR)$(PREFIX)/bin/mango-kernel
+	install -m 755 $(BOOT_BIN) $(DESTDIR)$(PREFIX)/bin/boot1
+	install -m 755 $(MANGO_BIN) $(DESTDIR)$(PREFIX)/bin/mach_mango
 
 # -- clean ----------------------------------------------------------------
 

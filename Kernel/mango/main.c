@@ -29,7 +29,7 @@ int main(int argc, char *argv[])
             fprintf(stderr, "  -s              Single-user mode (no init)\n");
             fprintf(stderr, "\n");
             fprintf(stderr, "Environment:\n");
-            fprintf(stderr, "  USERFSROOT      User filesystem root (default: /usr/local/userfs)\n");
+            fprintf(stderr, "  USERFSROOT      User filesystem root (default: /)\n");
             return 0;
         }
     }

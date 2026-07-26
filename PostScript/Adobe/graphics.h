@@ -371,7 +371,7 @@ _matrix procedure PopMatrix( /* Matrix m;*/ );
      in "m" with its values. */
 
 
-_matrix procedure PushCoord( /* Coord c; */ );
+_matrix		PushCoord( /* Coord c; */ );
   /* pushes c onto the PostScript operand stack. */
 
 

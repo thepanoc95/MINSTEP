@@ -166,7 +166,7 @@ const char *mango_get_userfs_root(void)
         return _mango_kernel.userfs_root;
     }
 
-    return "/usr/local/minstep";
+    return "/";
 }
 
 void mango_set_userfs_root(const char *path)

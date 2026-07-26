@@ -1,6 +1,6 @@
 # MINSTEP Display PostScript build.
 
-CC ?= gcc
+CC = gcc
 CFLAGS ?= -Wall -Wextra -Werror -std=gnu99 -g -O2
 CPPFLAGS ?=
 LDFLAGS ?=

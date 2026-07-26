@@ -173,7 +173,7 @@
         return _userfs_root;
     }
 
-    return "/usr/local/minstep";
+    return "/";
 }
 
 - (void)setUserfsRoot:(const char *)path {
@@ -192,8 +192,14 @@
 
     klog_info("searching for init: %s\n", init_path);
 
+    if (access(init_path, F_OK) != 0) {
+        klog_warn("%s does not exist (errno=%d: %s)\n", init_path, errno, strerror(errno));
+        klog_notice("entering single-user mode\n");
+        return KERN_FAILURE;
+    }
+
     if (access(init_path, X_OK) != 0) {
-        klog_warn("%s not found or not executable\n", init_path);
+        klog_warn("%s exists but not executable (errno=%d: %s)\n", init_path, errno, strerror(errno));
         klog_notice("entering single-user mode\n");
         return KERN_FAILURE;
     }

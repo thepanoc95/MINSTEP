@@ -19,6 +19,7 @@ End Edit History.
 
 
 #include "postscript.h"
+#include "except.h"
 
 public nameObject dictfull;
 public nameObject dictstackoverflow;
@@ -52,7 +53,7 @@ public ERROR(e)
 	nameObject e;
 {
   psERROR = e;
-  raise(PS_ERROR,"");
+  PS_RAISE(PS_ERROR,"");
 }
 
 public CantHappen()
@@ -105,3 +106,13 @@ public procedure ErrorInit(reason)
     endswitch}
 }
 
+ExceptBuf       *_except_top = (ExceptBuf *)0;   /* empty stack       */
+int              ExceptMode  = 0;
+ExceptionRecord  Exception   = { 0 };
+
+void LIBexceptinit(void)
+{
+    _except_top = (ExceptBuf *)0;
+    ExceptMode  = 0;
+    Exception.Code = 0;
+}

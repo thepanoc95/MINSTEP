@@ -25,7 +25,7 @@ End Edit History.
 public Underflow (stack) Stack stack; {ERROR(stackunderflow);}
 
 public Overflow (stack) Stack stack;
-	{psFULLSTACK = stack; raise(PS_STKOVRFLW,"");}
+	{psFULLSTACK = stack; PS_RAISE(PS_STKOVRFLW,"");}
 
 public RestoreStack(stack, mark)
 	Stack stack; Node mark;

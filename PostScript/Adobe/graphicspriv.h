@@ -213,7 +213,7 @@ _path procedure SetBBox( /* Path p; */ );
   /* Computes the bounding box of "p" and sets its .bbox field accordingly. */
 
 
-extern procedure ShowInternal( /* strObject soShow; boolean noShow;
+extern ShowInternal( /* strObject soShow; boolean noShow;
    DeviceCoord adjust; boolean wShow; character wChar; Coord deltaWidth;
    boolean kShow; Object kObj; */ );
   /* Internal interface to the Show family of functions.  "soShow" is

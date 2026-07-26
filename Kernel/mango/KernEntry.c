@@ -26,20 +26,34 @@ static const char *mango_kernel_paths[] = {
 
 #pragma mark @KERNEL_ENTRY :: START
 
-void jump2mach(void)
+void jump2mach(const char *kernel_path)
 {
-    /* Try to exec the mango-kernel binary */
-    for (const char **p = mango_kernel_paths; *p; p++) {
-        if (access(*p, X_OK) == 0) {
-            fprintf(stderr, "Now loading kernel....\n");
-            execvp(*p, (char *[]){ (char *)*p, NULL });
-            /* exec only returns on error */
-            perror("exec failed");
+    const char *path = kernel_path;
+
+    if (!path) {
+        /* No explicit path given, search defaults */
+        for (const char **p = mango_kernel_paths; *p; p++) {
+            if (access(*p, X_OK) == 0) {
+                path = *p;
+                break;
+            }
         }
     }
 
-    fprintf(stderr, "ERROR: mango-kernel not found.\n");
-    fprintf(stderr, "Ensure mango-kernel is in PATH or in the current directory.\n");
+    if (!path) {
+        fprintf(stderr, "ERROR: mango-kernel not found.\n");
+        fprintf(stderr, "Ensure mango-kernel is in PATH or in the current directory.\n");
+        return;
+    }
+
+    if (access(path, X_OK) != 0) {
+        fprintf(stderr, "ERROR: kernel '%s' is not executable or not found.\n", path);
+        return;
+    }
+
+    fprintf(stderr, "Now loading kernel: %s\n", path);
+    execvp(path, (char *[]){ (char *)path, NULL });
+    perror("exec failed");
 }
 
 #pragma mark @KERNEL_ENTRY :: END

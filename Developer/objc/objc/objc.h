@@ -119,7 +119,7 @@ struct NSMutableData;
  * NSLog
  * ======================================================================== */
 
-extern void NSLog(id format, ...);
+extern void NSLog(const char *format, ...);
 
 /* ========================================================================
  * Object - Root Class

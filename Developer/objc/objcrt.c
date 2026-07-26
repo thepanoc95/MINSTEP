@@ -62,12 +62,6 @@ static unsigned int _hash_string(const char *str)
  * Selector Management
  * ======================================================================== */
 
-struct objc_selector {
-    const char  *_name;
-    const char  *_types;
-    unsigned int _uid;
-};
-
 SEL sel_registerName(const char *name)
 {
     unsigned int idx;
@@ -856,6 +850,31 @@ Class object_setClass(id obj, Class cls)
 }
 
 /* ========================================================================
+ * Root Class Default Methods
+ *
+ * These provide +alloc and +new for root classes that don't inherit
+ * from NSObject or Object.  The preprocessor automatically registers
+ * them on any @implementation whose superclass is Nil.
+ * ======================================================================== */
+
+id objc_root_alloc(Class cls, SEL cmd)
+{
+    (void)cmd;
+    return class_createInstance(cls, 0);
+}
+
+id objc_root_new(Class cls, SEL cmd)
+{
+    id instance;
+    (void)cmd;
+    instance = class_createInstance(cls, 0);
+    if (instance) {
+        instance = objc_msgSend(instance, sel_registerName("init"));
+    }
+    return instance;
+}
+
+/* ========================================================================
  * Message Dispatch
  * ======================================================================== */
 
@@ -912,6 +931,7 @@ id objc_msgSendSuper(struct objc_super *super, SEL op, ...)
     va_list args;
     id result;
     if (!super || !super->receiver || !op) return nil;
+    if (!super->super_class) return super->receiver;
     imp = _objc_lookup_method(super->super_class, op);
     if (!imp) {
         fprintf(stderr, "objc: unrecognized selector '%s' sent to super of %s\n",
@@ -1036,17 +1056,44 @@ void objc_enumerationMutation(id obj)
  * Runtime Initialization
  * ======================================================================== */
 
+/* ========================================================================
+ * Object - Root Class Default Methods
+ * ======================================================================== */
+
+static id object_init(id self, SEL cmd) { (void)cmd; return self; }
+static id object_free(id self, SEL cmd) { (void)cmd; return object_dispose(self); }
+static id object_self(id self, SEL cmd) { (void)cmd; return self; }
+static Class object_class(id self, SEL cmd) { (void)cmd; return object_getClass(self); }
+static Class object_class_cls(Class cls, SEL cmd) { (void)cmd; return cls; }
+
 void _objc_init(void)
 {
+    Class object_cls;
     if (_objc_runtime_ready) return;
-    memset(_class_hash, 0, sizeof(_class_hash));
     memset(_sel_hash, 0, sizeof(_sel_hash));
     memset(_rc_table, 0, sizeof(_rc_table));
     memset(_autorelease_pool, 0, sizeof(_autorelease_pool));
     _sel_count = 0;
-    _class_count = 0;
     _autorelease_pool_top = 0;
     _objc_runtime_ready = 1;
+
+    /* Register the root Object class with fundamental methods */
+    object_cls = objc_allocateClassPair(Nil, "Object", 0);
+    class_addMethod(object_cls, sel_registerName("init"),
+                    (IMP)object_init, "@@:");
+    class_addMethod(object_cls, sel_registerName("free"),
+                    (IMP)object_free, "@@:");
+    class_addMethod(object_cls, sel_registerName("self"),
+                    (IMP)object_self, "@@:");
+    class_addMethod(object_cls, sel_registerName("class"),
+                    (IMP)object_class, "@@:");
+    class_addMethod(object_cls->isa, sel_registerName("class"),
+                    (IMP)object_class_cls, "@@:");
+    class_addMethod(object_cls->isa, sel_registerName("alloc"),
+                    (IMP)objc_root_alloc, "@@:");
+    class_addMethod(object_cls->isa, sel_registerName("new"),
+                    (IMP)objc_root_new, "@@:");
+    objc_registerClassPair(object_cls);
 }
 
 int _objc_image_count(void) { return 1; }
@@ -1063,5 +1110,19 @@ int _objc_getClassList(Class *buffer, int bufferLen)
     return count;
 }
 
-__attribute__((constructor))
+/* ========================================================================
+ * NSLog - Minimal Foundation logging stub
+ * ======================================================================== */
+
+void NSLog(const char *fmt, ...)
+{
+    va_list args;
+    va_start(args, fmt);
+    fprintf(stderr, "NSLog: ");
+    vfprintf(stderr, fmt, args);
+    fprintf(stderr, "\n");
+    va_end(args);
+}
+
+__attribute__((constructor(101)))
 static void _objc_runtime_constructor(void) { _objc_init(); }

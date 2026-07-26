@@ -18,6 +18,10 @@ End Edit History.
 
 #include "postscript.h"
 
+private ForAllQProcs();
+private CleanStack();
+private RestoreToLevel();
+
 /* constants for holding virtual memory */
 
 #if cSANDPIPER
@@ -26,11 +30,11 @@ End Edit History.
 #define VMpassword 91139
 #endif cSANDPIPER
 #if cSANDPIPER
-#define nVMpgsROM 12
+#define nVMpgsROM 48
 #else cSANDPIPER
-#define nVMpgsROM 12
+#define nVMpgsROM 48
 #endif cSANDPIPER
-#define nVMpgsRAM 200
+#define nVMpgsRAM 400
 #define VMsizeROM nVMpgsROM*charsPerPage
 #define initVMsizeRAM nVMpgsRAM*charsPerPage
 #define initVMsize (VMsizeROM+initVMsizeRAM)
@@ -97,7 +101,7 @@ private Offset AllocChars(n)
 	  vmInfo->last = vmInfo->last +(vmInfo->last+1)/2;
 	  if ((o+n) < vmInfo->last) goto ret;}}
       if ((reply[0] == 'n')||(reply[0] == 'N')){
-        sprintf(" ...exiting PS ..."); PRINT();
+        sprintf(Pbuf," ...exiting PS ..."); PRINT();
 	PSQuit();}
       sprintf(Pbuf,"Please answer (y)es or (n)o ..."); PRINT();}}
   ret:
@@ -391,7 +395,7 @@ public charptr EXPAND(current,n,size)
   return c;
 }
 #endif (!cRELEASE || (cVAX && !cSANDPIPER))
-public FREE(ptr) charptr; {cfree(ptr);}
+public FREE(ptr) charptr; {free(ptr);}
 
 private CacheEntry nullCE;
 

@@ -257,7 +257,7 @@ public Coord PopCoord()
   return c;
 }
 
-public procedure PushCoord(c) Coord c;
+public PushCoord(c) Coord c;
 {
   psPushReal(opStack, c.x);
   psPushReal(opStack, c.y);

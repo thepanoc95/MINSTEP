@@ -187,15 +187,6 @@ private MID HashMID(fid,mtx)
   return (MID)(h%MTSize);
 }
 
-private real RealValue(ob)
-	Object ob;
-{
-  switch (ob.type){
-    case intObj: return (real)ob.val.ival;
-    case realObj: return ob.val.rval;
-    default: ERROR(typecheck);}
-}
-
 private nameObject FontMetrics;
 
 #define agr(x,y) RealValue(VMGetElem(x,y))

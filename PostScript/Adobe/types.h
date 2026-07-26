@@ -71,13 +71,13 @@ typedef FILE *StreamHandle;
 #define FReal(x) (((real)(x))/((real)(1<<16)))
 #define RRound(x) ((integer)(((x)<0)?((x)-0.5):((x)+0.5)))
 
-#define charsPerPage 1024				/* VAX specific */
-#define charsPerWord 4					/* VAX specific */
-#define wordsPerPage charsPerPage/charsPerWord		/* VAX specific */
+#define charsPerPage 1024
+#define charsPerWord 8
+#define wordsPerPage charsPerPage/charsPerWord
 
 /* the following defs are for relative pointers into PS VM */
 
-typedef unsigned integer Offset;
+typedef unsigned long Offset;
 typedef Offset StrOffset, ArrayOffset, DictOffset, KeyValOffset,
 		SROoffset, SRCoffset, SRDoffset, SRoffset;
 #define NIL NULL
@@ -102,7 +102,7 @@ typedef Offset StrOffset, ArrayOffset, DictOffset, KeyValOffset,
 #define nObTypes 15
 
 #define nBitVectorBits 32				/* VAX specific */
-typedef unsigned integer BitVector;
+typedef unsigned long BitVector;
 
 typedef unsigned char Level;
 

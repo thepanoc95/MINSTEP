@@ -21,6 +21,12 @@ End Edit History.
 
 #if !cRELEASE
 
+private PrintAccess();
+private dumpStack();
+private dumpSysDict();
+private dumpDict();
+private integer dumpArray();
+
 private cardinal count;
 public Start() { count = 0;}
 

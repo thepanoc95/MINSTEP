@@ -20,7 +20,7 @@ INSTALL_PREFIX = /Local/Library/Frameworks
 DESTDIR =
 
 # Compiler flags
-OBJC = gcc
+OBJC = objcc
 OBJC_FLAGS = -Wall -g -fno-strict-aliasing
 OBJC_LDFLAGS = -dynamiclib -flat_namespace -undefined suppress
 

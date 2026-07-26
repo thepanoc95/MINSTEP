@@ -19,6 +19,7 @@ End Edit History.
 
 
 #include "postscript.h"
+#include "x11device.h"
 
 
 public procedure DeviceInit(reason)
@@ -30,8 +31,11 @@ BandDeviceInit(reason);
 #endif !(cSANDPIPER || cEXPORT)
 FrameDeviceInit(reason);
 #if !cSUN
+#if cVAX
 VersatecDevInit(reason);
+#endif cVAX
 #endif !cSUN
 InputDeviceInit(reason);
+X11DeviceInit(reason);
 }
 

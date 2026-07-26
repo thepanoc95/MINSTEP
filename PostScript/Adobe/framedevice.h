@@ -24,5 +24,6 @@ End Edit History.
 
 extern SCANTYPE *framebase;
 extern integer frameunitwidth, frameheight;
+extern procedure FrameDevice();
 
 #endif FRAMEDEVICE_H

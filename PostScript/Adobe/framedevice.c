@@ -666,7 +666,7 @@ if (frame != NIL)
 } /* end of FrameGoAway */
 
 
-private procedure FrameDevice()
+public procedure FrameDevice()
 {
 FrameStuff f;
 integer nbytes;

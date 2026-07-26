@@ -57,7 +57,7 @@ STDHDR_SRC   = $(OBJCDIR)/objc/objc.h
 
 .PHONY: all clean install uninstall test preproc libobjcrt headers
 
-all: preproc headers
+all: preproc libobjcrt headers
 
 # Preprocessor
 preproc: $(PREPROC_BIN)
@@ -111,8 +111,10 @@ install: all
 	install -m 644 $(OBJCRT_OBJ) $(LIBDIR)/libobjcrt.o
 
 	# Install headers
-	install -m 644 $(OBJCRT_HDR) $(INCDIR)/objc/objcrt.h
-	install -m 644 $(STDHDR_SRC) $(INCDIR)/objc/objc.h
+	install -d $(INCDIR)/objc
+	@for h in $(OBJCDIR)/objc/*.h; do \
+		install -m 644 "$$h" $(INCDIR)/objc/; \
+	done
 
 	@echo "Installation complete."
 	@echo ""

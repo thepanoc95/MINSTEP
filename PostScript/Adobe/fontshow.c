@@ -20,6 +20,10 @@ End Edit History.
 #include "fonts.h"
 #include "graphicspriv.h"
 
+private FastShow();
+private SlowShow();
+private MoveScratch();
+
 #define GetCurrentMID gs->matrixID
 #define GetFixDeviceCP(c)  {c.x = Fix(gs->cp.x); c.y = Fix(gs->cp.y);};
 private Coord tmp_cp;

@@ -294,7 +294,7 @@ public boolean GetAbort() {return execAbort;}
 
 public SetAbort(flag) boolean flag; {execAbort = flag;}
 
-private procedure Stop() {raise(PS_STOPEXEC,"");}
+private procedure Stop() {PS_RAISE(PS_STOPEXEC,"");}
 
 private procedure Exec()
 {

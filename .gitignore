@@ -15,3 +15,5 @@ boot
 *.out
 *.elf
 *.mach
+*.tar
+*.VM

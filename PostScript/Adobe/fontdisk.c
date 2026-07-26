@@ -19,6 +19,8 @@ End Edit History.
 
 #include "fonts.h"
 
+private InitFontCache();
+
 public boolean cacheInited;
 
 public FCDataRec fcData;

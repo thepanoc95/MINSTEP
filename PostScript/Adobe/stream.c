@@ -213,11 +213,11 @@ public procedure StreamInit(reason)
     endswitch}
 }
 
-#else (cAPPLE)
+#else /* cAPPLE */
 
 #include <sys/types.h>
 #include <sys/stat.h>
-#include <sgtty.h>
+#include <termios.h>
 
 #define MAXnStreams 15
 #define maxName 100
@@ -295,13 +295,13 @@ private boolean echo;
 public psEcho(b)
 	boolean b;
 {
-  struct sgttyb argp;
+  struct termios argp;
   if (b == echo) return;
   echo = b;
-  gtty(stdinput, &argp);
-  if (b) argp.sg_flags = argp.sg_flags|ECHO;
-    else argp.sg_flags = argp.sg_flags&(~ECHO);
-  stty(stdinput, &argp);
+  tcgetattr(stdinput, &argp);
+  if (b) argp.c_lflag = argp.c_lflag|ECHO;
+    else argp.c_lflag = argp.c_lflag&(~ECHO);
+  tcsetattr(stdinput, TCSANOW, &argp);
 }
 
 /* private (encrypted) version of Run */

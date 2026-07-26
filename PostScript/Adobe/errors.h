@@ -20,11 +20,7 @@ End Edit History.
 #ifndef ERRORS_H
 #define ERRORS_H
 
-/* these are the only Exceptions that PS raises */
-
-#define PS_ERROR -2
-#define PS_STKOVRFLW -3
-#define PS_STOPEXEC -4
+/* PS_ERROR, PS_STKOVRFLW, PS_STOPEXEC are defined in except.h */
 
 
 /* error names */

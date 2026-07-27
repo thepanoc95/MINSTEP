@@ -31,13 +31,11 @@ void run_mach_binary() {
         int current_y = HEADER_HEIGHT + 1;
 
         while (fgets(buffer, sizeof(buffer), stream) != NULL) {
-            // Strip newline character
             buffer[strcspn(buffer, "\n")] = 0;
             wattron(stdscr, COLOR_PAIR(2));
             mvwprintw(stdscr, current_y++, MARGIN_X, "%s", buffer);
             wattroff(stdscr, COLOR_PAIR(2));
             
-            // Re-draw blinking block cursor at the new position
             wattron(stdscr, COLOR_PAIR(1));
             mvwprintw(stdscr, current_y, MARGIN_X, " ");
             wattroff(stdscr, COLOR_PAIR(1));

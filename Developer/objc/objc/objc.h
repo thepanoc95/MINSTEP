@@ -691,13 +691,9 @@ struct NSString *NSError_inst_localizedRecoverySuggestion(id self, SEL _cmd);
  * ======================================================================== */
 
 /* Block syntax (^) requires Clang. For GCC, provide a basic stub. */
-#if defined(__clang__) && __has_feature(blocks)
-  /* Compiler supports blocks natively */
-  typedef void (^dispatch_block_t)(void);
-#elif defined(__clang__)
+#ifdef __clang__
   typedef void (^dispatch_block_t)(void);
 #else
-  /* GCC does not support block syntax - provide a function pointer type */
   typedef void (*dispatch_block_t)(void);
 #endif
 

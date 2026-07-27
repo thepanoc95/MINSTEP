@@ -11,16 +11,11 @@
 #include "../task/task.h"
 #include "../mach/mach_port.h"
 #include "../loader/mach_loader.h"
+#include "../kal/kal.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <unistd.h>
-#include <signal.h>
-#include <poll.h>
-#include <sys/wait.h>
-#include <termios.h>
-#include <errno.h>
 
 mango_kernel_state_t _mango_kernel;
 
@@ -49,7 +44,7 @@ kern_return_t mango_kernel_init(uint32_t boot_flags)
 
     memset(&_mango_kernel, 0, sizeof(_mango_kernel));
     _mango_kernel.boot_flags = boot_flags;
-    _mango_kernel.kernel_pid = getpid();
+    _mango_kernel.kernel_pid = kal_getpid();
 
     mango_kernel_banner();
 
@@ -78,9 +73,9 @@ kern_return_t mango_kernel_init(uint32_t boot_flags)
         return kr;
     }
 
-    signal(SIGTERM, _mango_signal_handler);
-    signal(SIGINT, _mango_signal_handler);
-    signal(SIGCHLD, SIG_IGN);
+    kal_signal(KAL_SIGTERM, _mango_signal_handler);
+    kal_signal(KAL_SIGINT, _mango_signal_handler);
+    kal_signal(KAL_SIGCHLD, KAL_SIG_IGN);
 
     _mango_kernel.initialized = TRUE;
     _mango_kernel.host_port = mach_port_allocate(MACH_PORT_RIGHT_RECEIVE);
@@ -99,8 +94,8 @@ void mango_kernel_loop(void)
 
     while (_mango_running) {
         int status;
-        pid_t pid;
-        while ((pid = waitpid(-1, &status, WNOHANG)) > 0) {
+        kal_pid_t pid;
+        while ((pid = kal_process_reap(&status)) > 0) {
             for (int i = 0; i < TASK_MAX; i++) {
                 mango_task_t *task = &mango_task_table[i];
                 if (task->in_use && task->host_pid == pid) {
@@ -128,11 +123,11 @@ void mango_kernel_loop(void)
                                   &reply, reply.header.msgh_size, 1000);
                 }
 
-                free(msg);
+                kal_free(msg);
             }
         }
 
-        usleep(1000);
+        kal_usleep(1000);
     }
 
     klog_info("dispatch loop exiting\n");
@@ -159,7 +154,7 @@ void mango_kernel_shutdown(void)
 
 const char *mango_get_userfs_root(void)
 {
-    const char *env = getenv("USERFSROOT");
+    const char *env = kal_env_get("USERFSROOT");
     if (env && env[0]) return env;
 
     if (_mango_kernel.userfs_root[0]) {
@@ -180,18 +175,18 @@ void mango_set_userfs_root(const char *path)
 
 void mango_kernel_main(const char *init_path)
 {
-    struct termios saved_term;
-    int have_saved_term = (tcgetattr(STDIN_FILENO, &saved_term) == 0);
+    kal_terminal_t term;
+    int have_saved_term = (kal_terminal_save(&term) == 0);
 
     uint32_t flags = 0;
 
-    const char *v = getenv("MANGO_BOOT_VERBOSE");
+    const char *v = kal_env_get("MANGO_BOOT_VERBOSE");
     if (v && v[0]) flags |= MANGO_BOOT_VERBOSE;
 
-    const char *s = getenv("MANGO_BOOT_SINGLE_USER");
+    const char *s = kal_env_get("MANGO_BOOT_SINGLE_USER");
     if (s && s[0]) flags |= MANGO_BOOT_SINGLE_USER;
 
-    const char *userfs = getenv("USERFSROOT");
+    const char *userfs = kal_env_get("USERFSROOT");
     if (userfs && userfs[0]) {
         mango_set_userfs_root(userfs);
     }
@@ -214,6 +209,6 @@ void mango_kernel_main(const char *init_path)
     mango_kernel_shutdown();
 
     if (have_saved_term) {
-        tcsetattr(STDIN_FILENO, TCSAFLUSH, &saved_term);
+        kal_terminal_restore(&term);
     }
 }

@@ -5,7 +5,8 @@
  *
  * The original Mach kernel provides assert_wait, thread_block,
  * and thread_wakeup for thread synchronization.  In the Mango
- * usermode nanokernel, we implement these with pthreads.
+ * usermode nanokernel, we implement these with KAL condition
+ * variables (falling back to pthreads if KAL is unavailable).
  *
  * assert_wait(event, interruptible)  -- mark current thread as waiting
  * thread_block(cleanup)              -- block the current thread
@@ -17,8 +18,6 @@
 #ifndef MANGO_COMPAT_KERN_SCHED_PRIM_H
 #define MANGO_COMPAT_KERN_SCHED_PRIM_H
 
-#include <pthread.h>
-#include <sched.h>
 #include <mach/boolean.h>
 
 #ifdef __cplusplus
@@ -40,6 +39,31 @@ typedef void *event_t;
  *  (typically just task/space pointers).
  * ----------------------------------------------------------------------- */
 
+#ifdef MANGO_KAL_THREAD_H
+/* KAL threading is available */
+
+#include "../kal/kal_thread.h"
+
+typedef struct mango_wait_channel {
+    event_t                 mw_event;
+    kal_mutex_t             mw_mutex;
+    kal_cond_t              mw_cond;
+    boolean_t               mw_woken;
+    struct mango_wait_channel *mw_next;
+} mango_wait_channel_t;
+
+extern mango_wait_channel_t *mango_wait_channels;
+
+extern mango_wait_channel_t *mango_wait_find(event_t event);
+extern void mango_assert_wait(event_t event, boolean_t interruptible);
+extern void mango_thread_block(void (*cleanup)(void));
+extern void mango_thread_wakeup(event_t event);
+
+#else
+/* Fallback to pthreads */
+
+#include <pthread.h>
+
 typedef struct mango_wait_channel {
     event_t                 mw_event;
     pthread_mutex_t         mw_mutex;
@@ -48,29 +72,14 @@ typedef struct mango_wait_channel {
     struct mango_wait_channel *mw_next;
 } mango_wait_channel_t;
 
-/* -----------------------------------------------------------------------
- *  assert_wait / thread_block / thread_wakeup
- *
- *  These are the three scheduler primitives used by ipc_entry_grow_table.
- *  In the grow-table pattern:
- *    1. A thread sets space->is_growing = TRUE
- *    2. If another thread sees is_growing, it calls:
- *         assert_wait((event_t)space, FALSE);
- *         is_write_unlock(space);
- *         thread_block((void (*)()) 0);
- *         is_write_lock(space);
- *    3. When the growing thread finishes, it calls:
- *         thread_wakeup((event_t)space);
- *
- *  We implement this with a per-event condition variable.
- * ----------------------------------------------------------------------- */
-
 extern mango_wait_channel_t *mango_wait_channels;
 
 extern mango_wait_channel_t *mango_wait_find(event_t event);
 extern void mango_assert_wait(event_t event, boolean_t interruptible);
 extern void mango_thread_block(void (*cleanup)(void));
 extern void mango_thread_wakeup(event_t event);
+
+#endif /* MANGO_KAL_THREAD_H */
 
 #define assert_wait(event, intr)    mango_assert_wait((event), (intr))
 #define thread_block(cleanup)       mango_thread_block((cleanup))

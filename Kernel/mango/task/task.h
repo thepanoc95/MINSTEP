@@ -54,9 +54,9 @@ typedef struct mango_task {
     pid_t               host_pid;           /* Host process ID              */
     BOOL                in_use;             /* Slot is allocated            */
     BOOL                running;            /* Task has been started        */
-    BOOL                terminated;         /* Task has exited              }
+    BOOL                terminated;         /* Task has exited              */
 
-    /* Port rights table, maps Mach port names to port objects.
+    /* Port rights table: maps Mach port names to port objects.
      * ports[i] is the name, port_objects[i] is the port object. */
     mach_port_name_t    ports[TASK_PORT_MAX];
     mach_port_t         port_objects[TASK_PORT_MAX];

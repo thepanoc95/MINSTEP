@@ -6,20 +6,25 @@
 
 #include "ipc.h"
 #include "../mach/klog.h"
+#include "../kal/kal.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <unistd.h>
-#include <poll.h>
-#include <errno.h>
 
-ipc_service_entry_t ipc_service_table[IPC_MAX_SERVICES];
-int                 ipc_service_count = 0;
-mach_port_t         ipc_bootstrap_port = MACH_PORT_NULL;
+extern ipc_service_entry_t ipc_service_table[IPC_MAX_SERVICES];
+extern int                 ipc_service_count;
+extern mach_port_t         ipc_bootstrap_port;
+
+extern kern_return_t ipc_mach_compat_init(void);
 
 kern_return_t ipc_init(void)
 {
+    kern_return_t kr = ipc_mach_compat_init();
+    if (kr != KERN_SUCCESS) {
+        return kr;
+    }
+
     ipc_bootstrap_port = mach_port_allocate(MACH_PORT_RIGHT_RECEIVE);
     if (ipc_bootstrap_port == MACH_PORT_NULL) {
         klog_err("could not allocate bootstrap port\n");
@@ -60,23 +65,22 @@ kern_return_t mach_msg_receive(mach_port_t src, mach_msg_t *msg,
     if (!port) return KERN_INVALID_RIGHT;
 
     mach_msg_t *queued = NULL;
-    struct pollfd pfd;
+    kal_pollfd_t pfd;
     int elapsed = 0;
 
-    pfd.fd = port->fd;
-    pfd.events = POLLIN;
+    pfd.fd = (kal_fd_t)port->fd;
+    pfd.events = KAL_POLLIN;
 
     while (!queued) {
         queued = mach_port_dequeue_message(src);
         if (queued) break;
 
-        int ret = poll(&pfd, 1, 100);
+        int ret = kal_poll(&pfd, 1, 100);
         if (ret < 0) {
-            if (errno == EINTR) continue;
             return KERN_FAILURE;
         }
 
-        if (ret > 0 && (pfd.revents & POLLIN)) {
+        if (ret > 0 && (pfd.revents & KAL_POLLIN)) {
             queued = mach_port_dequeue_message(src);
             if (queued) break;
         }
@@ -90,7 +94,7 @@ kern_return_t mach_msg_receive(mach_port_t src, mach_msg_t *msg,
     mach_msg_size_t copy_size = queued->header.msgh_size;
     if (copy_size > size) copy_size = size;
     memcpy(msg, queued, copy_size);
-    free(queued);
+    kal_free(queued);
 
     return KERN_SUCCESS;
 }

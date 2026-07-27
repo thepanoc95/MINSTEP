@@ -324,8 +324,7 @@ void mango_kernel_main(const char *init_path)
             klog_err("exec init failed: %s\n", strerror(errno));
             ((void(*)(int))_exit)(1);
         } else {
-            _init_pid = pid;
-            _mango_kernel_init_pid = pid;
+            _shared_kernel->_init_pid = pid;
             klog_info("init launched (pid %d)\n", pid);
         }
     }

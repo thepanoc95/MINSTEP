@@ -1,0 +1,1132 @@
+% ========================================================================
+%  MinSTEP Kernel Abstraction Layer
+%  Reference Manual, Version 1.0
+%
+%  Typeset in TeX to evoke the NeXT Computer, Inc. technical
+%  reference manuals of the late 1980s.
+% ========================================================================
+
+\documentclass[11pt,twoside]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage{courier}
+\usepackage{url}
+\usepackage{tabularx}
+\usepackage{longtable}
+\usepackage{fancyhdr}
+
+% -----------------------------------------------------------------------
+%  Page style
+% -----------------------------------------------------------------------
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[LE]{\scshape\small MinSTEP Kernel Abstraction Layer}
+\fancyhead[RO]{\scshape\small Reference Manual}
+\fancyfoot[CE]{\small\thepage}
+\fancyfoot[CO]{\small\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+\renewcommand{\footrulewidth}{0pt}
+
+% -----------------------------------------------------------------------
+%  Commands
+% -----------------------------------------------------------------------
+
+\newcommand{\KAL}{KAL}
+\newcommand{\Mango}{Mango}
+\newcommand{\MinSTEP}{MinSTEP}
+\newcommand{\NeXTSTEP}{NeXTSTEP}
+\newcommand{\code}[1]{{\tt #1}}
+\newcommand{\meta}[1]{{\itshape #1}}
+\newcommand{\ie}{{\itshape i.e.}}
+
+% ========================================================================
+
+\begin{document}
+
+% -----------------------------------------------------------------------
+%  Title page
+% -----------------------------------------------------------------------
+
+\thispagestyle{empty}
+\begin{center}
+\vspace*{2in}
+
+{\LARGE\bfseries MinSTEP}\\[0.3in]
+{\large\itshape An Open-Source NeXTSTEP 0.8-like Operating Environment}\\[0.5in]
+{\LARGE\bfseries Kernel Abstraction Layer}\\[0.3in]
+{\Large\bfseries Reference Manual}\\[0.8in]
+{\large Version 1.0}\\[0.5in]
+\vfill
+{\large Miguel V.\ Mesquita}\\[0.2in]
+{\large July 2026}
+
+\end{center}
+
+\newpage
+
+% -----------------------------------------------------------------------
+%  Copyright page
+% -----------------------------------------------------------------------
+
+\thispagestyle{empty}
+\vspace*{8in}
+
+\begin{center}
+\small
+Copyright {\copyright} 2026 Miguel V.\ Mesquita.\\
+All rights reserved.
+
+\medskip
+
+This document is part of the MinSTEP project and is distributed
+under the BSD License.
+
+\medskip
+
+MinSTEP is an open-source project inspired by NeXTSTEP 0.8--2.2.\\
+It provides a usermode operating environment with its own kernel
+and Mach IPC.
+
+\medskip
+
+NeXTSTEP is a trademark of NeXT, Inc.\\
+Mach is a trademark of Carnegie Mellon University.
+
+\bigskip
+
+{\bf MinSTEP}\\
+Licensed under the BSD License.
+\end{center}
+
+\newpage
+
+% -----------------------------------------------------------------------
+%  Table of contents
+% -----------------------------------------------------------------------
+
+\tableofcontents
+\newpage
+
+% ========================================================================
+\section{Introduction}
+% ========================================================================
+
+This document describes the MinSTEP Kernel Abstraction Layer (\KAL),
+a thin, portable abstraction over host operating system primitives.
+The \KAL\ allows the \Mango\ nanokernel to run on any supported
+platform without modifying kernel subsystem code.
+
+% ========================================================================
+\subsection{Overview}
+% ========================================================================
+
+The \Mango\ nanokernel is a usermode process that emulates Mach kernel
+abstractions---ports, tasks, IPC, and binary loading---on top of a
+host operating system.  In its original form, the kernel called
+POSIX APIs directly (\code{fork}, \code{socketpair}, \code{poll},
+\code{pthread\_mutex}, \code{tcgetattr}, \code{clock\_gettime}, and
+so on).  This tied the kernel to Unix-like systems.
+
+The \KAL\ replaces these direct calls with portable function
+interfaces.  Each interface has one or more backend implementations,
+selected at compile time by platform detection macros.  The current
+release includes a POSIX backend for Linux, macOS, FreeBSD, and other
+Unix-like systems.  Additional backends (\ie\ Win32) may be added
+in the future.
+
+The translation model is:
+
+\begin{center}
+{\tt kernel subsystem}~$\longrightarrow$~{\bfseries [KAL API]}~$\longrightarrow$~{\bfseries [platform backend]}~$\longrightarrow$~{\tt host OS}
+\end{center}
+
+The \KAL\ is written in standard C (C99) and compiles on any
+platform that provides a C compiler.  It consists of 10 header files
+and 9 implementation files (for the POSIX backend), totalling
+approximately 1{,}200 lines of code.
+
+% ========================================================================
+\subsection{Design Principles}
+% ========================================================================
+
+The \KAL\ follows four design principles:
+
+\begin{enumerate}
+  \item {\bf Thin wrappers.}  Every \KAL\ function does little more
+        than call the corresponding host API.  There is no hidden
+        state, no middleware, and no performance overhead beyond one
+        function call.
+
+  \item {\bf Compile-time selection.}  Platform backends are selected
+        by {\tt \#ifdef} in {\tt kal\_platform.h}.  There are no
+        function pointer tables or runtime dispatch.  The cost is
+        zero at run time.
+
+  \item {\bf Graceful fallback.}  The Compat headers ({\tt lock.h},
+        {\tt sched\_prim.h}, {\tt zalloc.h}) detect whether the \KAL\
+        is available and fall back to direct POSIX calls if it is not.
+        This means the kernel can still build without the \KAL\ on
+        supported platforms.
+
+  \item {\bf Minimal surface area.}  The \KAL\ abstracts only the
+        host APIs that the kernel actually uses.  It does not attempt
+        to be a general-purpose OS abstraction layer.
+\end{enumerate}
+
+% ========================================================================
+\subsection{Supported Platforms}
+% ========================================================================
+
+The following platforms are detected automatically by
+{\tt kal\_platform.h}:
+
+\medskip
+\noindent
+\begin{tabularx}{\textwidth}{lX}
+{\bf Platform}       & {\bf Macro} \\[2pt]
+Linux                & {\tt KAL\_PLATFORM\_LINUX} \\
+macOS (Darwin)       & {\tt KAL\_PLATFORM\_DARWIN} \\
+FreeBSD              & {\tt KAL\_PLATFORM\_FREEBSD} \\
+NetBSD               & {\tt KAL\_PLATFORM\_NETBSD} \\
+OpenBSD              & {\tt KAL\_PLATFORM\_OPENBSD} \\
+Other Unix           & {\tt KAL\_PLATFORM\_POSIX} \\
+Windows              & {\tt KAL\_PLATFORM\_WINDOWS} \\
+\end{tabularx}
+
+All Unix-like platforms define {\tt KAL\_PLATFORM\_POSIX} and share
+the POSIX backend.  Windows detection is present but the Win32
+backend is not yet implemented.
+
+% ========================================================================
+\newpage
+\section{Header Files}
+% ========================================================================
+
+The \KAL\ is accessed through a single master header:
+
+\begin{quote}
+{\tt \#include <kal/kal.h>}
+\end{quote}
+
+This pulls in all sub-headers.  Individual headers may also be
+included directly if only a subset of the \KAL\ is needed.
+
+\bigskip
+\noindent
+\begin{tabularx}{\textwidth}{lX}
+{\bf Header} & {\bf Purpose} \\[2pt]
+{\tt kal.h}            & Master include---pulls in everything. \\
+{\tt kal\_platform.h}  & Platform detection and feature flags. \\
+{\tt kal\_process.h}   & Process creation, termination, environment. \\
+{\tt kal\_ipc.h}       & Socket pairs, read/write, poll. \\
+{\tt kal\_memory.h}    & Memory allocation. \\
+{\tt kal\_signal.h}    & Signal handler registration. \\
+{\tt kal\_thread.h}    & Mutexes, condition variables, yield. \\
+{\tt kal\_terminal.h}  & Terminal save/restore/raw mode. \\
+{\tt kal\_filesys.h}   & File I/O, temporary files, directories. \\
+{\tt kal\_system.h}    & System information, memory, machine type. \\
+{\tt kal\_time.h}      & Monotonic clock and timestamps. \\
+\end{tabularx}
+
+% ========================================================================
+\newpage
+\section{Process Management}
+\label{sec:process}
+% ========================================================================
+
+The process interface abstracts process creation, termination, and
+environment variable access.
+
+% ========================================================================
+\subsection{Types}
+% ========================================================================
+
+\begin{quote}
+\begin{verbatim}
+typedef int kal_pid_t;
+\end{verbatim}
+\end{quote}
+
+A process identifier.  On POSIX systems this is {\tt pid\_t}.
+
+% ========================================================================
+\subsection{Process Identity}
+% ========================================================================
+
+\begin{quote}
+\begin{verbatim}
+kal_pid_t kal_getpid(void);
+\end{verbatim}
+\end{quote}
+
+Returns the PID of the calling process.
+
+% ========================================================================
+\subsection{Process Creation}
+% ========================================================================
+
+\begin{quote}
+\begin{verbatim}
+typedef struct kal_spawn_args {
+    const char     *exec_path;
+    const char    **argv;
+    const char    **envp;
+} kal_spawn_args_t;
+
+int kal_process_spawn(kal_spawn_args_t *args,
+                      kal_pid_t *out_pid);
+\end{verbatim}
+\end{quote}
+
+Spawns a new process.  The child executes {\tt exec\_path} with the
+given argument vector.  If {\tt envp} is {\tt NULL}, the child
+inherits the parent's environment.
+
+On success, {\tt *out\_pid} is set to the child's PID and the
+function returns $0$.  On failure it returns $-1$.
+
+\medskip
+\noindent
+{\bf Example:}
+\begin{quote}
+\begin{verbatim}
+kal_pid_t pid;
+const char *argv[] = { "/sbin/init", NULL };
+
+kal_spawn_args_t args = {
+    .exec_path = "/sbin/init",
+    .argv = argv,
+    .envp = NULL
+};
+
+if (kal_process_spawn(&args, &pid) == 0) {
+    klog_info("init launched (pid %d)\n", pid);
+}
+\end{verbatim}
+\end{quote}
+
+% ========================================================================
+\subsection{Process Termination}
+% ========================================================================
+
+\begin{quote}
+\begin{verbatim}
+int kal_process_kill(kal_pid_t pid, int sig);
+\end{verbatim}
+\end{quote}
+
+Sends signal {\tt sig} to process {\tt pid}.  Returns $0$ on
+success.
+
+\begin{quote}
+\begin{verbatim}
+void kal_process_exit(int code)
+    __attribute__((noreturn));
+\end{verbatim}
+\end{quote}
+
+Terminates the calling process with exit code {\tt code}.
+
+% ========================================================================
+\subsection{Process Reaping}
+% ========================================================================
+
+\begin{quote}
+\begin{verbatim}
+kal_pid_t kal_process_reap(int *out_status);
+\end{verbatim}
+\end{quote}
+
+Reaps a terminated child process without blocking ({\tt WNOHANG}).
+Returns the child PID, or $0$ if no children have exited.  If
+{\tt out\_status} is not {\tt NULL}, the exit status is stored there.
+
+\begin{quote}
+\begin{verbatim}
+kal_pid_t kal_process_wait(kal_pid_t pid,
+                           int *out_status);
+\end{verbatim}
+\end{quote}
+
+Waits for a specific child process to exit (blocking).  Returns the
+child PID.
+
+% ========================================================================
+\subsection{Environment Variables}
+% ========================================================================
+
+\begin{quote}
+\begin{verbatim}
+const char *kal_env_get(const char *name);
+int kal_env_set(const char *name,
+                const char *value,
+                int overwrite);
+\end{verbatim}
+\end{quote}
+
+{\tt kal\_env\_get} returns the value of environment variable
+{\tt name}, or {\tt NULL} if it is not set.
+
+{\tt kal\_env\_set} sets or updates an environment variable.  If
+{\tt overwrite} is nonzero, an existing value is replaced.  Returns
+$0$ on success.
+
+% ========================================================================
+\subsection{File Executability Check}
+% ========================================================================
+
+\begin{quote}
+\begin{verbatim}
+int kal_can_exec(const char *path);
+\end{verbatim}
+\end{quote}
+
+Returns $1$ if {\tt path} exists and is executable by the current
+user, $0$ otherwise.
+
+% ========================================================================
+\newpage
+\section{IPC and Socket Primitives}
+\label{sec:ipc}
+% ========================================================================
+
+The IPC interface abstracts socket pairs and poll-based I/O, which
+the \Mango\ kernel uses to emulate Mach port message passing.
+
+% ========================================================================
+\subsection{Types}
+% ========================================================================
+
+\begin{quote}
+\begin{verbatim}
+typedef int kal_fd_t;
+
+#define KAL_FD_INVALID  (-1)
+\end{verbatim}
+\end{quote}
+
+A file descriptor handle.  {\tt KAL\_FD\_INVALID} represents an
+invalid descriptor.
+
+\begin{quote}
+\begin{verbatim}
+typedef struct kal_pollfd {
+    kal_fd_t    fd;
+    uint32_t    events;
+    uint32_t    revents;
+} kal_pollfd_t;
+\end{verbatim}
+\end{quote}
+
+A poll descriptor.  The {\tt events} field specifies the requested
+event mask; {\tt revents} receives the returned events.
+
+\medskip
+\noindent
+\begin{tabularx}{\textwidth}{lX}
+{\bf Constant} & {\bf Meaning} \\[2pt]
+{\tt KAL\_POLLIN}  & Data is available for reading. \\
+{\tt KAL\_POLLOUT} & Writing will not block. \\
+{\tt KAL\_POLLERR} & Error condition. \\
+{\tt KAL\_POLLHUP} & Hang-up. \\
+\end{tabularx}
+
+% ========================================================================
+\subsection{Socket Pairs}
+% ========================================================================
+
+\begin{quote}
+\begin{verbatim}
+int kal_socket_pair(kal_fd_t *out_fd0,
+                    kal_fd_t *out_fd1);
+\end{verbatim}
+\end{quote}
+
+Creates a connected pair of Unix domain socket file descriptors.
+Returns $0$ on success, $-1$ on error.
+
+% ========================================================================
+\subsection{I/O}
+% ========================================================================
+
+\begin{quote}
+\begin{verbatim}
+ssize_t kal_write(kal_fd_t fd,
+                  const void *buf,
+                  size_t count);
+
+ssize_t kal_read(kal_fd_t fd,
+                 void *buf,
+                 size_t count);
+\end{verbatim}
+\end{quote}
+
+{\tt kal\_write} writes up to {\tt count} bytes from {\tt buf} to
+the file descriptor {\tt fd}.  Returns the number of bytes written,
+or $-1$ on error.
+
+{\tt kal\_read} reads up to {\tt count} bytes into {\tt buf}.
+Returns the number of bytes read, $0$ on end-of-file, or $-1$ on
+error.
+
+\begin{quote}
+\begin{verbatim}
+int kal_close(kal_fd_t fd);
+\end{verbatim}
+\end{quote}
+
+Closes a file descriptor.
+
+% ========================================================================
+\subsection{Polling}
+% ========================================================================
+
+\begin{quote}
+\begin{verbatim}
+int kal_poll(kal_pollfd_t *fds,
+             unsigned int nfds,
+             int timeout_ms);
+\end{verbatim}
+\end{quote}
+
+Waits for events on up to {\tt nfds} file descriptors.  Returns the
+number of ready descriptors, $0$ on timeout, or $-1$ on error.  At
+most 64 descriptors may be polled per call.
+
+% ========================================================================
+\newpage
+\section{Memory Management}
+\label{sec:memory}
+% ========================================================================
+
+The memory interface wraps the host allocator.  On platforms without
+a standard C library, these may be backed by a custom heap.
+
+\begin{quote}
+\begin{verbatim}
+void *kal_malloc(size_t size);
+void *kal_calloc(size_t count, size_t size);
+void *kal_realloc(void *ptr, size_t new_size);
+void  kal_free(void *ptr);
+\end{verbatim}
+\end{quote}
+
+These follow standard C semantics.  {\tt kal\_calloc} returns
+zero-initialized memory.  {\tt kal\_free} accepts {\tt NULL} safely.
+
+% ========================================================================
+\newpage
+\section{Signal Handling}
+\label{sec:signal}
+% ========================================================================
+
+The signal interface provides portable signal registration.
+
+\begin{quote}
+\begin{verbatim}
+#define KAL_SIGTERM  15
+#define KAL_SIGINT    2
+#define KAL_SIGCHLD  17
+#define KAL_SIG_IGN  ((kal_sighandler_t)1)
+
+typedef void (*kal_sighandler_t)(int sig);
+\end{verbatim}
+\end{quote}
+
+The signal number constants are defined to their POSIX values.
+On Windows or other platforms, the backend maps them to the
+appropriate native codes.
+
+\begin{quote}
+\begin{verbatim}
+kal_sighandler_t kal_signal(
+    int sig,
+    kal_sighandler_t handler);
+\end{verbatim}
+\end{quote}
+
+Installs a signal handler.  Returns the previous handler.
+
+\medskip
+\noindent
+{\bf Example:}
+\begin{quote}
+\begin{verbatim}
+static volatile int running = 1;
+
+static void on_shutdown(int sig) {
+    (void)sig;
+    running = 0;
+}
+
+kal_signal(KAL_SIGTERM, on_shutdown);
+kal_signal(KAL_SIGINT,  on_shutdown);
+kal_signal(KAL_SIGCHLD, KAL_SIG_IGN);
+\end{verbatim}
+\end{quote}
+
+% ========================================================================
+\newpage
+\section{Threading and Synchronization}
+\label{sec:thread}
+% ========================================================================
+
+The threading interface provides mutexes, condition variables, and
+thread yield.  These are used by the Mach4 compat layer
+({\tt lock.h}, {\tt sched\_prim.h}) to implement kernel
+synchronization primitives.
+
+% ========================================================================
+\subsection{Mutex}
+% ========================================================================
+
+\begin{quote}
+\begin{verbatim}
+typedef struct kal_mutex {
+    void *_impl;
+} kal_mutex_t;
+\end{verbatim}
+\end{quote}
+
+An opaque mutex handle.  The {\tt \_impl} pointer is
+allocated by {\tt kal\_mutex\_init} and holds the
+backend-specific state (on POSIX, a {\tt pthread\_mutex\_t}).
+
+\begin{quote}
+\begin{verbatim}
+int kal_mutex_init(kal_mutex_t *m);
+int kal_mutex_destroy(kal_mutex_t *m);
+int kal_mutex_lock(kal_mutex_t *m);
+int kal_mutex_trylock(kal_mutex_t *m);
+int kal_mutex_unlock(kal_mutex_t *m);
+\end{verbatim}
+\end{quote}
+
+All functions return $0$ on success and $-1$ on error.
+{\tt kal\_mutex\_trylock} returns $0$ if the lock was acquired
+and $-1$ if it was not.
+
+% ========================================================================
+\subsection{Condition Variable}
+% ========================================================================
+
+\begin{quote}
+\begin{verbatim}
+typedef struct kal_cond {
+    void *_impl;
+} kal_cond_t;
+\end{verbatim}
+\end{quote}
+
+\begin{quote}
+\begin{verbatim}
+int kal_cond_init(kal_cond_t *c);
+int kal_cond_destroy(kal_cond_t *c);
+int kal_cond_wait(kal_cond_t *c, kal_mutex_t *m);
+int kal_cond_signal(kal_cond_t *c);
+int kal_cond_broadcast(kal_cond_t *c);
+\end{verbatim}
+\end{quote}
+
+{\tt kal\_cond\_wait} atomically releases the mutex {\tt m} and
+blocks on the condition variable {\tt c}.  When it returns, the
+mutex is re-acquired.
+
+{\tt kal\_cond\_signal} wakes one waiter.
+{\tt kal\_cond\_broadcast} wakes all waiters.
+
+% ========================================================================
+\subsection{Thread Yield}
+% ========================================================================
+
+\begin{quote}
+\begin{verbatim}
+void kal_yield(void);
+\end{verbatim}
+\end{quote}
+
+Yields the current thread's time slice to the host scheduler.
+
+% ========================================================================
+\newpage
+\section{Terminal I/O}
+\label{sec:terminal}
+% ========================================================================
+
+The terminal interface provides raw-mode manipulation for the boot
+prompt and kernel console.
+
+\begin{quote}
+\begin{verbatim}
+typedef struct kal_terminal {
+    void *_impl;
+} kal_terminal_t;
+\end{verbatim}
+\end{quote}
+
+An opaque terminal handle that stores the saved terminal state.
+
+\begin{quote}
+\begin{verbatim}
+int kal_terminal_save(kal_terminal_t *t);
+int kal_terminal_restore(kal_terminal_t *t);
+int kal_terminal_raw(kal_terminal_t *t);
+\end{verbatim}
+\end{quote}
+
+{\tt kal\_terminal\_save} captures the current terminal settings.
+{\tt kal\_terminal\_restore} restores previously saved settings.
+{\tt kal\_terminal\_raw} puts the terminal into non-canonical,
+no-echo mode suitable for character-by-character input.
+
+\medskip
+\noindent
+{\bf Example:}
+\begin{quote}
+\begin{verbatim}
+kal_terminal_t term;
+int saved = (kal_terminal_save(&term) == 0);
+
+/* ... run kernel ... */
+
+if (saved)
+    kal_terminal_restore(&term);
+\end{verbatim}
+\end{quote}
+
+% ========================================================================
+\newpage
+\section{Filesystem Operations}
+\label{sec:filesys}
+% ========================================================================
+
+The filesystem interface abstracts file I/O, temporary files,
+directory creation, and permissions.  These are used primarily by
+the {\tt .mach} binary loader.
+
+% ========================================================================
+\subsection{File Handle}
+% ========================================================================
+
+\begin{quote}
+\begin{verbatim}
+typedef struct kal_file {
+    void *_impl;
+} kal_file_t;
+\end{verbatim}
+\end{quote}
+
+An opaque file handle wrapping the host {\tt FILE*} (on POSIX).
+
+% ========================================================================
+\subsection{High-Level File I/O}
+% ========================================================================
+
+\begin{quote}
+\begin{verbatim}
+kal_file_t *kal_fopen(const char *path,
+                      const char *mode);
+int kal_fclose(kal_file_t *f);
+
+size_t kal_fread(void *buf, size_t size,
+                 size_t count, kal_file_t *f);
+size_t kal_fwrite(const void *buf, size_t size,
+                  size_t count, kal_file_t *f);
+
+int kal_fseek(kal_file_t *f,
+              long offset, int whence);
+\end{verbatim}
+\end{quote}
+
+These follow standard C {\tt FILE} semantics.  The {\tt whence}
+argument uses {\tt KAL\_SEEK\_SET}, {\tt KAL\_SEEK\_CUR}, and
+{\tt KAL\_SEEK\_END}.
+
+% ========================================================================
+\subsection{Low-Level File I/O}
+% ========================================================================
+
+\begin{quote}
+\begin{verbatim}
+int kal_open(const char *path,
+             int flags, int mode);
+ssize_t kal_fd_write(int fd,
+                     const void *buf,
+                     size_t count);
+int kal_fd_close(int fd);
+\end{verbatim}
+\end{quote}
+
+These provide direct file descriptor access for temporary file
+extraction.
+
+% ========================================================================
+\subsection{Temporary Files}
+% ========================================================================
+
+\begin{quote}
+\begin{verbatim}
+int kal_mkstemp(char *template);
+\end{verbatim}
+\end{quote}
+
+Creates and opens a unique temporary file.  The {\tt template}
+string is modified in place (the last six characters are replaced
+with unique characters).  Returns the file descriptor.
+
+% ========================================================================
+\subsection{Directory and Metadata Operations}
+% ========================================================================
+
+\begin{quote}
+\begin{verbatim}
+int kal_mkdir(const char *path, int mode);
+int kal_chmod(const char *path, int mode);
+int kal_unlink(const char *path);
+int kal_access(const char *path, int mode);
+\end{verbatim}
+\end{quote}
+
+These provide portable directory creation, permission changes, file
+deletion, and existence checks.
+
+% ========================================================================
+\newpage
+\section{System Information}
+\label{sec:system}
+% ========================================================================
+
+The system interface provides queries for hardware and OS properties.
+
+\begin{quote}
+\begin{verbatim}
+size_t   kal_get_page_size(void);
+uint64_t kal_get_total_memory(void);
+uint64_t kal_get_available_memory(void);
+\end{verbatim}
+\end{quote}
+
+{\tt kal\_get\_page\_size} returns the system page size in bytes.
+{\tt kal\_get\_total\_memory} and {\tt kal\_get\_available\_memory}
+return physical memory sizes in bytes, or $0$ if unknown.
+
+\begin{quote}
+\begin{verbatim}
+const char *kal_get_machine_type(void);
+const char *kal_get_os_name(void);
+\end{verbatim}
+\end{quote}
+
+{\tt kal\_get\_machine\_type} returns a string identifying the
+architecture (e.g.\ {\tt "x86\_64"}, {\tt "aarch64"}).
+{\tt kal\_get\_os\_name} returns the OS name and version string.
+
+Both return pointers to static buffers that are initialized on first
+call.
+
+\begin{quote}
+\begin{verbatim}
+void kal_usleep(unsigned int usec);
+\end{verbatim}
+\end{quote}
+
+Sleeps for the given number of microseconds.
+
+% ========================================================================
+\newpage
+\section{Timing and Clock}
+\label{sec:time}
+% ========================================================================
+
+The timing interface provides a monotonic clock for kernel
+timestamps.
+
+\begin{quote}
+\begin{verbatim}
+typedef struct kal_timespec {
+    uint64_t    tv_sec;
+    uint32_t    tv_nsec;
+} kal_timespec_t;
+\end{verbatim}
+\end{quote}
+
+\begin{quote}
+\begin{verbatim}
+uint64_t kal_clock_monotonic_ns(void);
+void     kal_clock_monotonic(kal_timespec_t *ts);
+double   kal_clock_seconds(void);
+\end{verbatim}
+\end{quote}
+
+{\tt kal\_clock\_monotonic\_ns} returns the time in nanoseconds
+since an arbitrary epoch (typically boot time).  The epoch is fixed
+for the lifetime of the process.
+
+{\tt kal\_clock\_monotonic} fills a {\tt kal\_timespec\_t} with
+the same value split into seconds and nanoseconds.
+
+{\tt kal\_clock\_seconds} returns the time as a double-precision
+floating-point value in seconds.
+
+% ========================================================================
+\newpage
+\section{Platform Configuration}
+\label{sec:platform}
+% ========================================================================
+
+% ========================================================================
+\subsection{Platform Detection}
+% ========================================================================
+
+The {\tt kal\_platform.h} header detects the host operating system
+and defines exactly one {\tt KAL\_PLATFORM\_*} macro.
+
+% ========================================================================
+\subsection{Feature Flags}
+% ========================================================================
+
+The following boolean macros indicate which host features are
+available:
+
+\bigskip
+\noindent
+\begin{tabularx}{\textwidth}{lX}
+{\bf Macro} & {\bf Meaning} \\[2pt]
+{\tt KAL\_HAS\_FORK}       & {\tt fork()} is available. \\
+{\tt KAL\_HAS\_EXEC}       & {\tt exec} family is available. \\
+{\tt KAL\_HAS\_SOCKETPAIR} & {\tt socketpair()} is available. \\
+{\tt KAL\_HAS\_POLL}       & {\tt poll()} is available. \\
+{\tt KAL\_HAS\_PTHREAD}    & POSIX threads are available. \\
+{\tt KAL\_HAS\_TERMIOS}    & Terminal I/O is available. \\
+{\tt KAL\_HAS\_CLOCK\_MONO} & Monotonic clock is available. \\
+{\tt KAL\_HAS\_MKSTEMP}    & {\tt mkstemp()} is available. \\
+{\tt KAL\_HAS\_ENVIRON}    & Environment variables are available. \\
+\end{tabularx}
+
+The POSIX backend defines all flags to $1$.  The Windows backend
+defines them all to $0$ except {\tt KAL\_HAS\_ENVIRON}.
+
+% ========================================================================
+\subsection{Version}
+% ========================================================================
+
+\begin{quote}
+\begin{verbatim}
+#define KAL_VERSION_MAJOR   1
+#define KAL_VERSION_MINOR   0
+#define KAL_VERSION_PATCH   0
+#define KAL_VERSION_STRING  "1.0.0"
+\end{verbatim}
+\end{quote}
+
+% ========================================================================
+\newpage
+\section{Porting the \KAL\ to a New Platform}
+\label{sec:porting}
+% ========================================================================
+
+To add support for a new operating system:
+
+\begin{enumerate}
+  \item {\bf Add platform detection.}
+        In {\tt kal\_platform.h}, add a new block:
+\begin{quote}
+\begin{verbatim}
+#elif defined(__myplatform__)
+    #define KAL_PLATFORM_MYOS    1
+    #define KAL_PLATFORM_NAME    "myos"
+\end{verbatim}
+\end{quote}
+
+  \item {\bf Set feature flags.}
+        Define {\tt KAL\_HAS\_*} macros for each feature the
+        platform supports:
+\begin{quote}
+\begin{verbatim}
+    #define KAL_HAS_FORK         1
+    #define KAL_HAS_EXEC         1
+    #define KAL_HAS_SOCKETPAIR   0
+    #define KAL_HAS_POLL         1
+    #define KAL_HAS_PTHREAD      0
+    #define KAL_HAS_TERMIOS      0
+    #define KAL_HAS_CLOCK_MONO   1
+    #define KAL_HAS_MKSTEMP      1
+    #define KAL_HAS_ENVIRON      1
+\end{verbatim}
+\end{quote}
+
+  \item {\bf Create backend source files.}
+        Create a new directory, e.g.\ {\tt kal/myos/}, and implement
+        one {\tt .c} file per \KAL\ subsystem:
+        {\tt kal\_myos\_process.c},
+        {\tt kal\_myos\_ipc.c},
+        {\tt kal\_myos\_memory.c}, etc.
+
+        Each file must implement every function declared in the
+        corresponding {\tt kal\_*\_h} header.
+
+  \item {\bf Update the Makefile.}
+        Add the new source files to the {\tt KAL\_SRC} and
+        {\tt KAL\_OBJ} variables in the kernel {\tt Makefile}.
+
+  \item {\bf Test.}
+        Build the kernel and verify that all subsystems initialize
+        correctly.
+\end{enumerate}
+
+% ========================================================================
+\newpage
+\section*{Appendix~A:\quad API Quick Reference}
+\addcontentsline{toc}{section}{Appendix A: API Quick Reference}
+% ========================================================================
+
+The following table lists every \KAL\ function.
+
+\bigskip
+\noindent
+\begin{longtable}{>{\tt}l l}
+\hline
+\multicolumn{1}{l}{\bf Function} &
+\multicolumn{1}{l}{\bf Header} \\
+\hline
+\endfirsthead
+\hline
+\multicolumn{1}{l}{\bf Function} &
+\multicolumn{1}{l}{\bf Header} \\
+\hline
+\endhead
+\hline
+\endfoot
+
+\multicolumn{2}{l}{\bf Process Management} \\
+\hline
+kal\_getpid()            & kal\_process.h \\
+kal\_process\_spawn()    & kal\_process.h \\
+kal\_process\_kill()     & kal\_process.h \\
+kal\_process\_exit()     & kal\_process.h \\
+kal\_process\_reap()     & kal\_process.h \\
+kal\_process\_wait()     & kal\_process.h \\
+kal\_env\_get()          & kal\_process.h \\
+kal\_env\_set()          & kal\_process.h \\
+kal\_can\_exec()         & kal\_process.h \\
+\hline
+
+\multicolumn{2}{l}{\bf IPC / Sockets} \\
+\hline
+kal\_socket\_pair()      & kal\_ipc.h \\
+kal\_close()             & kal\_ipc.h \\
+kal\_write()             & kal\_ipc.h \\
+kal\_read()              & kal\_ipc.h \\
+kal\_poll()              & kal\_ipc.h \\
+\hline
+
+\multicolumn{2}{l}{\bf Memory} \\
+\hline
+kal\_malloc()            & kal\_memory.h \\
+kal\_calloc()            & kal\_memory.h \\
+kal\_realloc()           & kal\_memory.h \\
+kal\_free()              & kal\_memory.h \\
+\hline
+
+\multicolumn{2}{l}{\bf Signals} \\
+\hline
+kal\_signal()            & kal\_signal.h \\
+\hline
+
+\multicolumn{2}{l}{\bf Threading} \\
+\hline
+kal\_mutex\_init()       & kal\_thread.h \\
+kal\_mutex\_destroy()    & kal\_thread.h \\
+kal\_mutex\_lock()       & kal\_thread.h \\
+kal\_mutex\_trylock()    & kal\_thread.h \\
+kal\_mutex\_unlock()     & kal\_thread.h \\
+kal\_cond\_init()        & kal\_thread.h \\
+kal\_cond\_destroy()     & kal\_thread.h \\
+kal\_cond\_wait()        & kal\_thread.h \\
+kal\_cond\_signal()      & kal\_thread.h \\
+kal\_cond\_broadcast()   & kal\_thread.h \\
+kal\_yield()             & kal\_thread.h \\
+\hline
+
+\multicolumn{2}{l}{\bf Terminal} \\
+\hline
+kal\_terminal\_save()    & kal\_terminal.h \\
+kal\_terminal\_restore() & kal\_terminal.h \\
+kal\_terminal\_raw()     & kal\_terminal.h \\
+\hline
+
+\multicolumn{2}{l}{\bf Filesystem} \\
+\hline
+kal\_fopen()             & kal\_filesys.h \\
+kal\_fclose()            & kal\_filesys.h \\
+kal\_fread()             & kal\_filesys.h \\
+kal\_fwrite()            & kal\_filesys.h \\
+kal\_fseek()             & kal\_filesys.h \\
+kal\_open()              & kal\_filesys.h \\
+kal\_fd\_write()         & kal\_filesys.h \\
+kal\_fd\_close()         & kal\_filesys.h \\
+kal\_mkstemp()           & kal\_filesys.h \\
+kal\_mkdir()             & kal\_filesys.h \\
+kal\_chmod()             & kal\_filesys.h \\
+kal\_unlink()            & kal\_filesys.h \\
+kal\_access()            & kal\_filesys.h \\
+\hline
+
+\multicolumn{2}{l}{\bf System} \\
+\hline
+kal\_get\_page\_size()          & kal\_system.h \\
+kal\_get\_total\_memory()       & kal\_system.h \\
+kal\_get\_available\_memory()   & kal\_system.h \\
+kal\_get\_machine\_type()       & kal\_system.h \\
+kal\_get\_os\_name()            & kal\_system.h \\
+kal\_usleep()                   & kal\_system.h \\
+\hline
+
+\multicolumn{2}{l}{\bf Timing} \\
+\hline
+kal\_clock\_monotonic\_ns()  & kal\_time.h \\
+kal\_clock\_monotonic()      & kal\_time.h \\
+kal\_clock\_seconds()        & kal\_time.h \\
+\hline
+
+\end{longtable}
+
+% ========================================================================
+\section*{Appendix~B:\quad Configuration Limits}
+\addcontentsline{toc}{section}{Appendix B: Configuration Limits}
+% ========================================================================
+
+The \KAL\ itself imposes no compile-time limits.  The following
+limits apply to the \Mango\ kernel subsystems that use the \KAL:
+
+\bigskip
+\noindent
+\begin{tabularx}{\textwidth}{lrlX}
+\hline
+\bf Symbol & \bf Value & & \bf Description \\
+\hline
+{\tt MACH\_PORT\_TABLE\_SIZE} & 256 & & Maximum Mach ports. \\
+{\tt MACH\_PORT\_QUEUE\_MAX}  & 64  & & Messages per port queue. \\
+{\tt TASK\_MAX}               & 128 & & Maximum tasks. \\
+{\tt TASK\_PORT\_MAX}         & 64  & & Port rights per task. \\
+{\tt THREAD\_MAX}             & 256 & & Threads per task. \\
+{\tt IPC\_MAX\_SERVICES}      & 128 & & Named IPC services. \\
+{\tt kal\_poll max}           & 64  & & Descriptors per poll call. \\
+\hline
+\end{tabularx}
+
+\vfill
+
+% -----------------------------------------------------------------------
+%  Colophon
+% -----------------------------------------------------------------------
+
+\begin{center}
+\small\itshape
+This document was typeset in \TeX.\\
+The body text is set in Computer Modern Roman,\\
+and code examples in Computer Modern Typewriter.
+\end{center}
+
+\end{document}

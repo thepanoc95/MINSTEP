@@ -3,13 +3,12 @@
  *
  * Usermode compatibility shim for Mach kernel locks.
  *
- * Maps Mach simple_lock operations to POSIX pthread_mutex_t.
+ * Maps Mach simple_lock operations to KAL mutex primitives.
+ * Falls back to POSIX pthreads if KAL is not available.
  */
 
 #ifndef MANGO_COMPAT_KERN_LOCK_H
 #define MANGO_COMPAT_KERN_LOCK_H
-
-#include <pthread.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -17,28 +16,60 @@ extern "C" {
 
 /* -----------------------------------------------------------------------
  *  simple_lock_data
+ *
+ *  On platforms with the KAL, this wraps kal_mutex_t.
+ *  On platforms without the KAL, it falls back to pthreads.
  * ----------------------------------------------------------------------- */
+
+#ifdef MANGO_KAL_THREAD_H
+/* KAL is available -- use kal_mutex_t */
+
+#include "../kal/kal_thread.h"
+
+typedef struct {
+    kal_mutex_t lock;
+} mango_simple_lock_data_t;
+
+#define decl_simple_lock_data(var, name) \
+    var mango_simple_lock_data_t name;
+
+static inline void simple_lock_init(mango_simple_lock_data_t *l)
+{
+    kal_mutex_init(&l->lock);
+}
+
+static inline void simple_lock(mango_simple_lock_data_t *l)
+{
+    kal_mutex_lock(&l->lock);
+}
+
+static inline void simple_unlock(mango_simple_lock_data_t *l)
+{
+    kal_mutex_unlock(&l->lock);
+}
+
+static inline int simple_lock_try(mango_simple_lock_data_t *l)
+{
+    return (kal_mutex_trylock(&l->lock) == 0) ? 1 : 0;
+}
+
+static inline void simple_lock_destroy(mango_simple_lock_data_t *l)
+{
+    kal_mutex_destroy(&l->lock);
+}
+
+#else
+/* KAL not available -- direct pthreads */
+
+#include <pthread.h>
 
 typedef struct {
     pthread_mutex_t lock;
     pthread_mutexattr_t attr;
 } mango_simple_lock_data_t;
 
-/*
- * In the real kernel, decl_simple_lock_data is used as:
- *   decl_simple_lock_data(, is_ref_lock_data)
- * The macro expands to include a type + name declaration.
- * The real macro definition ends with a semicolon:
- *   #define decl_simple_lock_data(class, name) class simple_lock_data_t name;
- * We follow the same convention.
- */
-
 #define decl_simple_lock_data(var, name) \
     var mango_simple_lock_data_t name;
-
-/* -----------------------------------------------------------------------
- *  simple_lock_init / simple_lock / simple_unlock / simple_lock_try
- * ----------------------------------------------------------------------- */
 
 static inline void simple_lock_init(mango_simple_lock_data_t *l)
 {
@@ -71,6 +102,8 @@ static inline void simple_lock_destroy(mango_simple_lock_data_t *l)
     pthread_mutex_destroy(&l->lock);
     pthread_mutexattr_destroy(&l->attr);
 }
+
+#endif /* MANGO_KAL_THREAD_H */
 
 #ifdef __cplusplus
 }

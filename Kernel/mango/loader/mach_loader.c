@@ -6,22 +6,17 @@
 
 #include "mach_loader.h"
 #include "../mach/klog.h"
+#include "../kal/kal.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <unistd.h>
-#include <fcntl.h>
-#include <errno.h>
-#include <sys/stat.h>
-#include <sys/wait.h>
-#include <signal.h>
 
 #define MACH_LOADER_TMPDIR "/tmp/mango-loader"
 
 kern_return_t mango_loader_init(void)
 {
-    mkdir(MACH_LOADER_TMPDIR, 0755);
+    kal_mkdir(MACH_LOADER_TMPDIR, 0755);
     klog_info("binary loader ready (tmpdir: %s)\n", MACH_LOADER_TMPDIR);
     return KERN_SUCCESS;
 }
@@ -31,15 +26,15 @@ kern_return_t mango_loader_validate(const char *mach_path,
 {
     if (!mach_path || !out_header) return KERN_INVALID_ARGUMENT;
 
-    FILE *f = fopen(mach_path, "rb");
+    kal_file_t *f = kal_fopen(mach_path, "rb");
     if (!f) {
         klog_err("cannot open: %s\n", mach_path);
         return KERN_INVALID_OBJECT;
     }
 
     mach_binary_header_t hdr;
-    size_t nread = fread(&hdr, sizeof(hdr), 1, f);
-    fclose(f);
+    size_t nread = kal_fread(&hdr, sizeof(hdr), 1, f);
+    kal_fclose(f);
 
     if (nread != 1) {
         klog_err("truncated header: %s\n", mach_path);
@@ -67,22 +62,22 @@ kern_return_t mango_loader_extract_binary(const char *mach_path,
                                           char *out_tmp_path,
                                           size_t tmp_path_size)
 {
-    FILE *src = fopen(mach_path, "rb");
+    kal_file_t *src = kal_fopen(mach_path, "rb");
     if (!src) return KERN_FAILURE;
 
     char template[256];
     snprintf(template, sizeof(template), "%s/mach.XXXXXX", MACH_LOADER_TMPDIR);
 
-    int tmpfd = mkstemp(template);
+    int tmpfd = kal_mkstemp(template);
     if (tmpfd < 0) {
-        fclose(src);
+        kal_fclose(src);
         return KERN_FAILURE;
     }
 
-    if (fseek(src, header->binary_offset, SEEK_SET) != 0) {
-        close(tmpfd);
-        fclose(src);
-        unlink(template);
+    if (kal_fseek(src, header->binary_offset, KAL_SEEK_SET) != 0) {
+        kal_fd_close(tmpfd);
+        kal_fclose(src);
+        kal_unlink(template);
         return KERN_FAILURE;
     }
 
@@ -91,23 +86,23 @@ kern_return_t mango_loader_extract_binary(const char *mach_path,
 
     while (remaining > 0) {
         size_t to_read = remaining > sizeof(buf) ? sizeof(buf) : remaining;
-        size_t nread = fread(buf, 1, to_read, src);
+        size_t nread = kal_fread(buf, 1, to_read, src);
         if (nread == 0) break;
-        ssize_t nwritten = write(tmpfd, buf, nread);
+        ssize_t nwritten = kal_fd_write(tmpfd, buf, nread);
         if (nwritten < 0) break;
         remaining -= (uint32_t)nwritten;
     }
 
-    fclose(src);
-    close(tmpfd);
+    kal_fclose(src);
+    kal_fd_close(tmpfd);
 
     if (remaining > 0) {
         klog_err("incomplete extraction: %u bytes remaining\n", remaining);
-        unlink(template);
+        kal_unlink(template);
         return KERN_FAILURE;
     }
 
-    chmod(template, 0755);
+    kal_chmod(template, 0755);
     strncpy(out_tmp_path, template, tmp_path_size - 1);
     out_tmp_path[tmp_path_size - 1] = '\0';
 
@@ -131,12 +126,12 @@ kern_return_t mango_loader_exec(mango_task_t *task,
     klog_info("extracted embedded binary to %s\n", tmp_path);
 
     if (header->metadata_offset > 0 && header->metadata_size > 0) {
-        FILE *f = fopen(mach_path, "rb");
+        kal_file_t *f = kal_fopen(mach_path, "rb");
         if (f) {
             mach_metadata_t meta;
-            fseek(f, header->metadata_offset, SEEK_SET);
-            size_t n = fread(&meta, 1, sizeof(meta), f);
-            fclose(f);
+            kal_fseek(f, header->metadata_offset, KAL_SEEK_SET);
+            size_t n = kal_fread(&meta, 1, sizeof(meta), f);
+            kal_fclose(f);
             if (n >= sizeof(uint32_t)) {
                 klog_info("app: %s v%s\n", meta.app_name, meta.version);
             }
@@ -145,29 +140,31 @@ kern_return_t mango_loader_exec(mango_task_t *task,
 
     strncpy(task->binary_path, mach_path, sizeof(task->binary_path) - 1);
 
-    pid_t pid = fork();
-    if (pid < 0) {
-        klog_err("fork failed: %s\n", strerror(errno));
-        unlink(tmp_path);
-        return KERN_FAILURE;
+    /* Set environment for the child */
+    char port_str[32];
+    snprintf(port_str, sizeof(port_str), "%d", task->bootstrap_port);
+    kal_env_set("MANGO_BOOTSTRAP_PORT", port_str, 1);
+
+    char id_str[32];
+    snprintf(id_str, sizeof(id_str), "%d", task->id);
+    kal_env_set("MANGO_TASK_ID", id_str, 1);
+
+    if (task->userfs_root[0]) {
+        kal_env_set("USERFSROOT", task->userfs_root, 1);
     }
 
-    if (pid == 0) {
-        char port_str[32];
-        snprintf(port_str, sizeof(port_str), "%d", task->bootstrap_port);
-        setenv("MANGO_BOOTSTRAP_PORT", port_str, 1);
+    const char *argv[] = { tmp_path, NULL };
+    kal_spawn_args_t spawn = {
+        .exec_path = tmp_path,
+        .argv = argv,
+        .envp = NULL   /* inherit current environment */
+    };
 
-        char id_str[32];
-        snprintf(id_str, sizeof(id_str), "%d", task->id);
-        setenv("MANGO_TASK_ID", id_str, 1);
-
-        if (task->userfs_root[0]) {
-            setenv("USERFSROOT", task->userfs_root, 1);
-        }
-
-        execl(tmp_path, tmp_path, (char *)NULL);
-        klog_err("exec failed: %s\n", strerror(errno));
-        _exit(1);
+    kal_pid_t pid;
+    if (kal_process_spawn(&spawn, &pid) < 0) {
+        klog_err("fork failed\n");
+        kal_unlink(tmp_path);
+        return KERN_FAILURE;
     }
 
     task->host_pid = pid;
@@ -206,8 +203,8 @@ kern_return_t mango_loader_cleanup(mango_task_t *task)
 {
     if (!task) return KERN_INVALID_TASK;
     if (task->host_pid > 0) {
-        kill(task->host_pid, SIGTERM);
-        waitpid(task->host_pid, NULL, WNOHANG);
+        kal_process_kill(task->host_pid, KAL_SIGTERM);
+        kal_process_wait(task->host_pid, NULL);
     }
     return KERN_SUCCESS;
 }

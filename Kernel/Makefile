@@ -20,7 +20,7 @@ CPPFLAGS ?=
 LDFLAGS  ?= -static
 
 # Include paths -- kernel headers are under mango/
-INCLUDES = -I. -Imango -Imango/mach -Imango/ipc -Imango/task -Imango/loader -Imango/compat
+INCLUDES = -I. -Imango -Imango/mach -Imango/ipc -Imango/task -Imango/loader -Imango/compat -Imango/kal
 
 # ========================================================================
 #  ObjC preprocessor and runtime (from Developer/objc/)
@@ -29,7 +29,7 @@ INCLUDES = -I. -Imango -Imango/mach -Imango/ipc -Imango/task -Imango/loader -Ima
 OBJCC      = $(CURDIR)/../Developer/objc/objcc
 OBJCCRT    = $(CURDIR)/../Developer/objc/build/libobjcrt.a
 # ObjC include flags (space-separated for objcc -I <dir> syntax)
-OBJCC_INCLUDES = -I . -I mango -I mango/mach -I mango/ipc -I mango/task -I mango/loader -I $(CURDIR)/../Developer/objc
+OBJCC_INCLUDES = -I . -I mango -I mango/mach -I mango/ipc -I mango/task -I mango/loader -I mango/kal -I $(CURDIR)/../Developer/objc
 
 # ========================================================================
 #  Source files
@@ -38,6 +38,27 @@ OBJCC_INCLUDES = -I . -I mango -I mango/mach -I mango/ipc -I mango/task -I mango
 # boot
 BOOT_SRC  = boot1.c mach.c
 BOOT_BIN  = boot1
+
+# KAL (Kernel Abstraction Layer) -- POSIX backend
+KAL_SRC   = mango/kal/posix/kal_posix_process.c \
+            mango/kal/posix/kal_posix_ipc.c \
+            mango/kal/posix/kal_posix_memory.c \
+            mango/kal/posix/kal_posix_signal.c \
+            mango/kal/posix/kal_posix_thread.c \
+            mango/kal/posix/kal_posix_terminal.c \
+            mango/kal/posix/kal_posix_filesys.c \
+            mango/kal/posix/kal_posix_system.c \
+            mango/kal/posix/kal_posix_time.c
+
+KAL_OBJ   = build/kal_posix_process.o \
+            build/kal_posix_ipc.o \
+            build/kal_posix_memory.o \
+            build/kal_posix_signal.o \
+            build/kal_posix_thread.o \
+            build/kal_posix_terminal.o \
+            build/kal_posix_filesys.o \
+            build/kal_posix_system.o \
+            build/kal_posix_time.o
 
 # Mango nanokernel -- pure C sources
 MANGO_C_SRC = mango/main.c \
@@ -88,7 +109,7 @@ MANGO_BIN  = mach
 #  Build targets
 # ========================================================================
 
-.PHONY: all clean boot mango run install help
+.PHONY: all clean boot mango run install help kal
 
 all: boot mango
 
@@ -107,12 +128,44 @@ build/boot1.o: boot1.c | build
 build/mach_boot.o: mach.c | build
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(INCLUDES) -c -o $@ $<
 
-# -- mango kernel ---------------------------------------------------------
+# -- kal ------------------------------------------------------------------
 
-mango: $(MANGO_BIN)
+kal: $(KAL_OBJ)
 
 build:
 	mkdir -p build
+
+# KAL POSIX backend object files
+build/kal_posix_process.o: mango/kal/posix/kal_posix_process.c | build
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(INCLUDES) -c -o $@ $<
+
+build/kal_posix_ipc.o: mango/kal/posix/kal_posix_ipc.c | build
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(INCLUDES) -c -o $@ $<
+
+build/kal_posix_memory.o: mango/kal/posix/kal_posix_memory.c | build
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(INCLUDES) -c -o $@ $<
+
+build/kal_posix_signal.o: mango/kal/posix/kal_posix_signal.c | build
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(INCLUDES) -c -o $@ $<
+
+build/kal_posix_thread.o: mango/kal/posix/kal_posix_thread.c | build
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(INCLUDES) -c -o $@ $<
+
+build/kal_posix_terminal.o: mango/kal/posix/kal_posix_terminal.c | build
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(INCLUDES) -c -o $@ $<
+
+build/kal_posix_filesys.o: mango/kal/posix/kal_posix_filesys.c | build
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(INCLUDES) -c -o $@ $<
+
+build/kal_posix_system.o: mango/kal/posix/kal_posix_system.c | build
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(INCLUDES) -c -o $@ $<
+
+build/kal_posix_time.o: mango/kal/posix/kal_posix_time.c | build
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(INCLUDES) -c -o $@ $<
+
+# -- mango kernel ---------------------------------------------------------
+
+mango: $(MANGO_BIN)
 
 # Pure C object files
 build/mach.o: mach.c | build
@@ -131,10 +184,10 @@ build/klog.o: mango/mach/klog.c | build
 build/mach_port.o: mango/mach/mach_port.c | build
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(INCLUDES) -c -o $@ $<
 
-build/ipc.o: mango/mach/ipc.c | build
+build/ipc.o: mango/ipc/ipc.c | build
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(INCLUDES) -c -o $@ $<
 
-build/task.o: mango/mach/task.c | build
+build/task.o: mango/task/task.c | build
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(INCLUDES) -c -o $@ $<
 
 build/mach_loader.o: mango/loader/mach_loader.c | build
@@ -174,9 +227,9 @@ build/MangoTask.o: mango/task/MangoTask.m | build
 build/MangoIPC.o: mango/ipc/MangoIPC.m | build
 	$(OBJCC) -c $(CFLAGS) $(OBJCC_INCLUDES) -o $@ $<
 
-# Link kernel: ObjC objects + C objects + libobjcrt
-$(MANGO_BIN): $(MANGO_M_OBJ) $(MANGO_C_OBJ) $(OBJCCRT)
-	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $(MANGO_M_OBJ) $(MANGO_C_OBJ) $(OBJCCRT) -lpthread $(LDLIBS)
+# Link kernel: ObjC objects + C objects + KAL objects + libobjcrt
+$(MANGO_BIN): $(MANGO_M_OBJ) $(MANGO_C_OBJ) $(KAL_OBJ) $(OBJCCRT)
+	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $(MANGO_M_OBJ) $(MANGO_C_OBJ) $(KAL_OBJ) $(OBJCCRT) -lpthread $(LDLIBS)
 
 # -- run ------------------------------------------------------------------
 
@@ -208,6 +261,7 @@ help:
 	@echo "  all          Build boot and mango kernel"
 	@echo "  boot         Build the boot prompt only"
 	@echo "  mango        Build the Mango nanokernel only"
+	@echo "  kal          Build KAL object files only"
 	@echo "  run          Build and run boot"
 	@echo "  install      Install to $(DESTDIR)$(PREFIX)/bin"
 	@echo "  clean        Remove build artifacts"

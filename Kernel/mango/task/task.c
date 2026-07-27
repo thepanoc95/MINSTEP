@@ -8,18 +8,15 @@
 #include "../ipc/ipc.h"
 #include "../mach/mach_port.h"
 #include "../mach/klog.h"
+#include "../kal/kal.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <unistd.h>
-#include <signal.h>
-#include <sys/wait.h>
-#include <errno.h>
 
-mango_task_t  mango_task_table[TASK_MAX];
-int           mango_task_count = 0;
-mango_task_t *mango_current_task = NULL;
+extern mango_task_t  mango_task_table[TASK_MAX];
+extern int           mango_task_count;
+extern mango_task_t *mango_current_task;
 
 kern_return_t mango_task_init(void)
 {
@@ -35,7 +32,7 @@ kern_return_t mango_kernel_task_init(void)
 
     memset(task, 0, sizeof(mango_task_t));
     task->id        = 0;
-    task->host_pid  = getpid();
+    task->host_pid  = kal_getpid();
     task->in_use    = TRUE;
     task->running   = TRUE;
     task->terminated = FALSE;
@@ -102,8 +99,8 @@ kern_return_t mango_task_terminate(mango_task_t *task)
     if (!task || !task->in_use) return KERN_INVALID_TASK;
 
     if (task->host_pid > 0) {
-        kill(task->host_pid, SIGTERM);
-        waitpid(task->host_pid, NULL, WNOHANG);
+        kal_process_kill(task->host_pid, KAL_SIGTERM);
+        kal_process_wait(task->host_pid, NULL);
     }
 
     for (int i = 0; i < task->port_count; i++) {
@@ -173,9 +170,8 @@ kern_return_t mango_thread_create(mango_task_t *task,
     if (!task || task->thread_count >= THREAD_MAX) {
         return KERN_NO_SPACE;
     }
-    mango_thread_t *thread = malloc(sizeof(mango_thread_t));
+    mango_thread_t *thread = kal_calloc(1, sizeof(mango_thread_t));
     if (!thread) return KERN_FAILURE;
-    memset(thread, 0, sizeof(mango_thread_t));
     thread->id = task->thread_count;
     thread->host_tid = -1;
     thread->active = TRUE;
@@ -190,7 +186,7 @@ kern_return_t mango_thread_terminate(mango_thread_t *thread)
 {
     if (!thread) return KERN_INVALID_ARGUMENT;
     thread->active = FALSE;
-    free(thread);
+    kal_free(thread);
     return KERN_SUCCESS;
 }
 
@@ -222,7 +218,7 @@ kern_return_t mango_launch_init(const char *userfs_root, const char *init_path)
         snprintf(resolved_path, sizeof(resolved_path), "%s/private/init", userfs_root);
         klog_info("searching for init: %s\n", resolved_path);
 
-        if (access(resolved_path, X_OK) != 0) {
+        if (!kal_can_exec(resolved_path)) {
             klog_warn("%s not found or not executable\n", resolved_path);
             klog_notice("falling back to /sbin/init\n");
             strncpy(resolved_path, "/sbin/init", sizeof(resolved_path) - 1);
@@ -241,21 +237,27 @@ kern_return_t mango_launch_init(const char *userfs_root, const char *init_path)
     strncpy(init_task->userfs_root, userfs_root,
             sizeof(init_task->userfs_root) - 1);
 
-    pid_t pid = fork();
-    if (pid < 0) {
-        klog_err("fork failed: %s\n", strerror(errno));
+    /* Build argv for the init process */
+    const char *argv[] = { resolved_path, NULL };
+
+    char port_str[32];
+    snprintf(port_str, sizeof(port_str), "%d", init_task->bootstrap_port);
+
+    /* Set environment for the child process to inherit */
+    kal_env_set("USERFSROOT", userfs_root, 1);
+    kal_env_set("MANGO_BOOTSTRAP_PORT", port_str, 1);
+
+    kal_spawn_args_t spawn = {
+        .exec_path = resolved_path,
+        .argv = argv,
+        .envp = NULL   /* inherit current environment */
+    };
+
+    kal_pid_t pid;
+    if (kal_process_spawn(&spawn, &pid) < 0) {
+        klog_err("fork failed\n");
         mango_task_terminate(init_task);
         return KERN_FAILURE;
-    }
-
-    if (pid == 0) {
-        setenv("USERFSROOT", userfs_root, 1);
-        char port_str[32];
-        snprintf(port_str, sizeof(port_str), "%d", init_task->bootstrap_port);
-        setenv("MANGO_BOOTSTRAP_PORT", port_str, 1);
-        execl(resolved_path, resolved_path, (char *)NULL);
-        klog_err("exec init failed: %s\n", strerror(errno));
-        _exit(1);
     }
 
     init_task->host_pid = pid;

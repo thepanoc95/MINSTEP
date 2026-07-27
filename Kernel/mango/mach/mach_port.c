@@ -11,14 +11,10 @@
  */
 
 #include "mach_port.h"
+#include "../kal/kal.h"
 
 #include <stdlib.h>
 #include <string.h>
-#include <unistd.h>
-#include <errno.h>
-#include <sys/socket.h>
-#include <sys/un.h>
-#include <poll.h>
 
 /* -----------------------------------------------------------------------
  *  Global port table (extern declared in MangoPort.h)
@@ -85,14 +81,14 @@ kern_return_t mach_port_deallocate(mach_port_t port)
     if (!obj) return KERN_INVALID_RIGHT;
 
     if (obj->fd >= 0) {
-        close(obj->fd);
+        kal_close(obj->fd);
         obj->fd = -1;
     }
 
     /* Drain any queued messages */
     while (obj->queue_count > 0) {
         mach_msg_t *msg = mach_port_dequeue_message(port);
-        if (msg) free(msg);
+        if (msg) kal_free(msg);
     }
 
     obj->in_use = FALSE;
@@ -139,24 +135,24 @@ mach_port_object_t *mach_port_lookup(mach_port_t port)
 
 int mach_port_create_socket_pair(mach_port_object_t *port_obj)
 {
-    int fds[2];
+    kal_fd_t fd0, fd1;
 
-    if (socketpair(AF_UNIX, SOCK_STREAM, 0, fds) < 0) {
+    if (kal_socket_pair(&fd0, &fd1) < 0) {
         return -1;
     }
 
-    /* Kernel end: fds[0]  (non-blocking for poll-based dispatch) */
-    /* Task end:   fds[1]  (given to the owning task)              */
+    /* Kernel end: fd0  (non-blocking for poll-based dispatch) */
+    /* Task end:   fd1  (given to the owning task)              */
 
-    port_obj->fd = fds[0];
+    port_obj->fd = (int)fd0;
 
     /* We store the task-end fd in a special way: close it here,
      * and the task will get it via port right insertion.  For
      * simplicity in this usermode implementation, we keep both
      * ends in the kernel and use the message queue instead. */
 
-    close(fds[1]);
-    return fds[0];
+    kal_close(fd1);
+    return (int)fd0;
 }
 
 /* -----------------------------------------------------------------------
@@ -173,7 +169,7 @@ kern_return_t mach_port_queue_message(mach_port_t port, mach_msg_t *msg)
     }
 
     /* Copy the message into the queue */
-    mach_msg_t *copy = malloc(msg->header.msgh_size);
+    mach_msg_t *copy = kal_malloc(msg->header.msgh_size);
     if (!copy) return KERN_FAILURE;
 
     memcpy(copy, msg, msg->header.msgh_size);
@@ -227,24 +223,4 @@ kern_return_t mach_port_insert_receive(mach_port_t port, mach_port_name_t name)
     return KERN_SUCCESS;
 }
 
-/* -----------------------------------------------------------------------
- *  mach_msg_send
- *
- *  Send a message via a port (simplified for usermode).
- * ----------------------------------------------------------------------- */
 
-kern_return_t mach_msg_send(mach_port_t port, mach_msg_t *msg, mach_msg_size_t size, int timeout)
-{
-    mach_port_object_t *obj = mach_port_lookup(port);
-    if (!obj) return KERN_INVALID_RIGHT;
-
-    /* In usermode, we use socket write() to send the message */
-    if (obj->fd < 0) return KERN_FAILURE;
-
-    ssize_t sent = write(obj->fd, msg, size);
-    if (sent < 0) {
-        return KERN_FAILURE;
-    }
-
-    return KERN_SUCCESS;
-}

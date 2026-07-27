@@ -2,7 +2,6 @@
 #define MANGO_MACH_KLOG_H
 
 #include <stdio.h>
-#include <time.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -18,21 +17,12 @@ extern "C" {
 #define KLOG_DEBUG   7
 
 extern int klog_level;
-extern struct timespec _klog_boot_time;
 
-static inline void klog_init_clock(void)
-{
-    clock_gettime(CLOCK_MONOTONIC, &_klog_boot_time);
-}
+/* Initialize the kernel clock (call once at boot). */
+void klog_init_clock(void);
 
-static inline double klog_time_since_boot(void)
-{
-    struct timespec now;
-    clock_gettime(CLOCK_MONOTONIC, &now);
-    double sec  = (double)(now.tv_sec  - _klog_boot_time.tv_sec);
-    double nsec = (double)(now.tv_nsec - _klog_boot_time.tv_nsec);
-    return sec + nsec / 1e9;
-}
+/* Return seconds elapsed since klog_init_clock(). */
+double klog_time_since_boot(void);
 
 void klog_emit(int level, const char *fmt, ...)
     __attribute__((format(printf, 2, 3)));

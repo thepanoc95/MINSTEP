@@ -10,12 +10,58 @@
 #include <stdio.h>
 #include <string.h>
 
+#if defined(MANGO_KAL_TIME_H)
+#include "../kal/kal_time.h"
+#else
+#include <time.h>
+#endif
+
 /* -----------------------------------------------------------------------
  *  Global state
  * ----------------------------------------------------------------------- */
 
 int             klog_level = KLOG_INFO;
-struct timespec _klog_boot_time = { 0, 0 };
+static double   _klog_boot_seconds = 0.0;
+static int      _klog_clock_initialized = 0;
+
+/* -----------------------------------------------------------------------
+ *  klog_init_clock
+ *
+ *  Capture the boot timestamp.  Safe to call multiple times;
+ *  only the first call takes effect.
+ * ----------------------------------------------------------------------- */
+
+void klog_init_clock(void)
+{
+    if (_klog_clock_initialized) return;
+    _klog_clock_initialized = 1;
+
+#if defined(MANGO_KAL_TIME_H)
+    _klog_boot_seconds = kal_clock_seconds();
+#else
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    _klog_boot_seconds = (double)ts.tv_sec + (double)ts.tv_nsec / 1e9;
+#endif
+}
+
+/* -----------------------------------------------------------------------
+ *  klog_time_since_boot
+ *
+ *  Return seconds elapsed since klog_init_clock() was called.
+ * ----------------------------------------------------------------------- */
+
+double klog_time_since_boot(void)
+{
+#if defined(MANGO_KAL_TIME_H)
+    return kal_clock_seconds() - _klog_boot_seconds;
+#else
+    struct timespec now;
+    clock_gettime(CLOCK_MONOTONIC, &now);
+    double now_sec = (double)now.tv_sec + (double)now.tv_nsec / 1e9;
+    return now_sec - _klog_boot_seconds;
+#endif
+}
 
 /* -----------------------------------------------------------------------
  *  klog_emit

@@ -1,20 +1,23 @@
 /*
  * mango/ipc/ipc_sched.c
  *
- * Usermode implementation of Mach scheduler primitives using pthreads.
+ * Usermode implementation of Mach scheduler primitives.
  *
  * Provides: assert_wait, thread_block, thread_wakeup, thread_go
  *
  * In the real Mach kernel, these block/wake kernel threads.
- * In Mango's usermode nanokernel, we use pthread condition variables
- * to implement the same semantics for the IPC subsystem.
+ * In Mango's usermode nanokernel, we use KAL synchronization
+ * primitives (falling back to pthreads if KAL is unavailable).
  */
 
 #include <stdlib.h>
-#include <pthread.h>
 #include <mach/boolean.h>
 #include <kern/sched_prim.h>
 #include <ipc/ipc_thread.h>
+
+#ifdef MANGO_KAL_THREAD_H
+#include <kal/kal.h>
+#endif
 
 /* -----------------------------------------------------------------------
  *  Global wait channel list
@@ -41,13 +44,22 @@ mango_wait_find(event_t event)
 	}
 
 	/* Allocate a new channel */
+#ifdef MANGO_KAL_THREAD_H
+	ch = kal_calloc(1, sizeof(*ch));
+#else
 	ch = calloc(1, sizeof(*ch));
+#endif
 	if (ch == NULL)
 		return NULL;
 
 	ch->mw_event = event;
+#ifdef MANGO_KAL_THREAD_H
+	kal_mutex_init(&ch->mw_mutex);
+	kal_cond_init(&ch->mw_cond);
+#else
 	pthread_mutex_init(&ch->mw_mutex, NULL);
 	pthread_cond_init(&ch->mw_cond, NULL);
+#endif
 	ch->mw_woken = FALSE;
 	ch->mw_next = mango_wait_channels;
 	mango_wait_channels = ch;
@@ -70,7 +82,11 @@ mango_assert_wait(event_t event, boolean_t interruptible)
 	if (ch == NULL)
 		return;
 
+#ifdef MANGO_KAL_THREAD_H
+	kal_mutex_lock(&ch->mw_mutex);
+#else
 	pthread_mutex_lock(&ch->mw_mutex);
+#endif
 	ch->mw_woken = FALSE;
 	mango_current_wait = ch;
 	/* Don't unlock -- thread_block will wait and then unlock */
@@ -89,15 +105,24 @@ mango_thread_block(void (*cleanup)(void))
 
 	if (ch == NULL) {
 		/* Nothing to wait on -- just yield */
+#ifdef MANGO_KAL_THREAD_H
+		kal_yield();
+#else
 		sched_yield();
+#endif
 		return;
 	}
 
 	/* Wait for the event to be signaled */
+#ifdef MANGO_KAL_THREAD_H
+	while (!ch->mw_woken)
+		kal_cond_wait(&ch->mw_cond, &ch->mw_mutex);
+	kal_mutex_unlock(&ch->mw_mutex);
+#else
 	while (!ch->mw_woken)
 		pthread_cond_wait(&ch->mw_cond, &ch->mw_mutex);
-
 	pthread_mutex_unlock(&ch->mw_mutex);
+#endif
 	mango_current_wait = NULL;
 }
 
@@ -114,10 +139,17 @@ mango_thread_wakeup(event_t event)
 	if (ch == NULL)
 		return;
 
+#ifdef MANGO_KAL_THREAD_H
+	kal_mutex_lock(&ch->mw_mutex);
+	ch->mw_woken = TRUE;
+	kal_cond_broadcast(&ch->mw_cond);
+	kal_mutex_unlock(&ch->mw_mutex);
+#else
 	pthread_mutex_lock(&ch->mw_mutex);
 	ch->mw_woken = TRUE;
 	pthread_cond_broadcast(&ch->mw_cond);
 	pthread_mutex_unlock(&ch->mw_mutex);
+#endif
 }
 
 /* -----------------------------------------------------------------------

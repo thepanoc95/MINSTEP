@@ -22,6 +22,7 @@
 #include <ipc/ipc_space.h>
 #include <ipc/ipc_table.h>
 #include <ipc/ipc_init.h>
+#include "../mach/klog.h"
 
 /* ====================================================================
  *  Zone definitions
@@ -140,7 +141,7 @@ ipc_space_release(struct ipc_space *space)
  * ==================================================================== */
 
 kern_return_t
-ipc_init(void)
+ipc_mach_compat_init(void)
 {
     /* Initialize table growth schedules */
     ipc_table_init();

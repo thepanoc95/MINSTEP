@@ -380,13 +380,10 @@ static void process_interface(void)
     BOOL has_super = NO;
     BOOL has_protocols = NO;
 
-    fprintf(stderr, "DEBUG: process_interface enter\n");
     in_interface = YES;
 
     skip_whitespace();
-    fprintf(stderr, "DEBUG: process_interface after skip_ws, calling read_identifier\n");
     read_identifier(name, sizeof(name));
-    fprintf(stderr, "DEBUG: process_interface name='%s'\n", name);
 
     if (name[0] == '\0') {
         fprintf(stderr, "%s:%d: expected class name after @interface\n",
@@ -508,7 +505,6 @@ static void process_method_declaration(BOOL is_class_method)
     int c;
     int arg_idx = 0;
 
-    fprintf(stderr, "DEBUG: process_method_declaration enter (cls=%d)\n", is_class_method);
     skip_whitespace();
 
     /* Read return type */
@@ -558,6 +554,7 @@ static void process_method_declaration(BOOL is_class_method)
                 if (isalnum(c) || c == '_') {
                     selector[sel_idx++] = c;
                 } else {
+                    unread_char(c);
                     break;
                 }
             }
@@ -617,7 +614,6 @@ static void process_method_declaration(BOOL is_class_method)
                 if (method_name[0] == '\0') {
                     strncpy(method_name, selector, sizeof(method_name) - 1);
                     method_name[sizeof(method_name) - 1] = '\0';
-                    if (c == ';') read_char(); /* consume ';' */
                     break;
                 }
                 /* Otherwise a prior selector part exists — put back and break. */
@@ -656,10 +652,8 @@ static void process_method_declaration(BOOL is_class_method)
                    params[0] ? ", " : "", params);
         }
     } else if (c == '{') {
-        fprintf(stderr, "DEBUG: process_method_declaration calling process_method_definition\n");
         process_method_definition(is_class_method);
     }
-    fprintf(stderr, "DEBUG: process_method_declaration returning (method='%s', params='%s')\n", method_name, params);
 }
 
 /* ========================================================================
@@ -1476,7 +1470,7 @@ static void process_source(void)
 {
     int c;
     static BOOL types_output = NO;
-    static int c_brace_depth = 0;
+    int c_brace_depth = 0;
 
     /* Output runtime header include once at the start of processing */
     if (!types_output) {
@@ -1522,8 +1516,6 @@ static void process_source(void)
         case '@': {
             char keyword[64];
             read_identifier(keyword, sizeof(keyword));
-            fprintf(stderr, "DEBUG: @ case keyword='%s'\n", keyword);
-
             if (strcmp(keyword, "interface") == 0) {
                 process_interface();
             } else if (strcmp(keyword, "implementation") == 0) {
@@ -1637,7 +1629,6 @@ static void process_source(void)
             } else {
                 output("@%s", keyword);
             }
-            fprintf(stderr, "DEBUG: @ case done, keyword='%s', in_impl=%d, in_iface=%d\n", keyword, in_implementation, in_interface);
             break;
         }
 

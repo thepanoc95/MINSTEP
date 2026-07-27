@@ -61,6 +61,8 @@ struct DPSContext {
     int height;
     DPSDeviceKind kind;
     unsigned char *pixels;
+    uint32_t *rgbPixels;
+    uint8_t curR, curG, curB;
     DPSOperand stack[128];
     int stack_depth;
     DPSPoint path[512];

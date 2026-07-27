@@ -91,7 +91,6 @@ int main() {
     // Handle running external binary code and append logs
     run_mach_binary();
 
-    // Idle loop simulating system runtime keeping window open
     while(1) {
         // Toggle simulated terminal block cursor flash states
         wattron(stdscr, COLOR_PAIR(1));

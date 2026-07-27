@@ -17,7 +17,7 @@
 kern_return_t mango_loader_init(void)
 {
     kal_mkdir(MACH_LOADER_TMPDIR, 0755);
-    klog_info("binary loader ready (tmpdir: %s)\n", MACH_LOADER_TMPDIR);
+    klog_sub_info("loader", "ready (tmpdir: %s)\n", MACH_LOADER_TMPDIR);
     return KERN_SUCCESS;
 }
 
@@ -28,7 +28,7 @@ kern_return_t mango_loader_validate(const char *mach_path,
 
     kal_file_t *f = kal_fopen(mach_path, "rb");
     if (!f) {
-        klog_err("cannot open: %s\n", mach_path);
+        klog_sub_err("loader", "cannot open: %s\n", mach_path);
         return KERN_INVALID_OBJECT;
     }
 
@@ -37,19 +37,19 @@ kern_return_t mango_loader_validate(const char *mach_path,
     kal_fclose(f);
 
     if (nread != 1) {
-        klog_err("truncated header: %s\n", mach_path);
+        klog_sub_err("loader", "truncated header: %s\n", mach_path);
         return KERN_INVALID_OBJECT;
     }
 
     if (hdr.magic != MACH_BINARY_MAGIC_BE &&
         hdr.magic != MACH_BINARY_MAGIC_LE) {
-        klog_err("bad magic in %s: 0x%08x (expected 0x%08x)\n",
+        klog_sub_err("loader", "bad magic in %s: 0x%08x (expected 0x%08x)\n",
                  mach_path, hdr.magic, MACH_BINARY_MAGIC_BE);
         return KERN_INVALID_OBJECT;
     }
 
     if (hdr.version != MACH_BINARY_VERSION_1) {
-        klog_err("unsupported format version: %u\n", hdr.version);
+        klog_sub_err("loader", "unsupported format version: %u\n", hdr.version);
         return KERN_INVALID_ARGUMENT;
     }
 
@@ -97,7 +97,7 @@ kern_return_t mango_loader_extract_binary(const char *mach_path,
     kal_fd_close(tmpfd);
 
     if (remaining > 0) {
-        klog_err("incomplete extraction: %u bytes remaining\n", remaining);
+        klog_sub_err("loader", "incomplete extraction: %u bytes remaining\n", remaining);
         kal_unlink(template);
         return KERN_FAILURE;
     }
@@ -119,11 +119,11 @@ kern_return_t mango_loader_exec(mango_task_t *task,
     kern_return_t kr = mango_loader_extract_binary(mach_path, header,
                                                    tmp_path, sizeof(tmp_path));
     if (kr != KERN_SUCCESS) {
-        klog_err("failed to extract binary from %s\n", mach_path);
+        klog_sub_err("loader", "failed to extract binary from %s\n", mach_path);
         return kr;
     }
 
-    klog_info("extracted embedded binary to %s\n", tmp_path);
+    klog_sub_info("loader", "extracted embedded binary to %s\n", tmp_path);
 
     if (header->metadata_offset > 0 && header->metadata_size > 0) {
         kal_file_t *f = kal_fopen(mach_path, "rb");
@@ -133,7 +133,7 @@ kern_return_t mango_loader_exec(mango_task_t *task,
             size_t n = kal_fread(&meta, 1, sizeof(meta), f);
             kal_fclose(f);
             if (n >= sizeof(uint32_t)) {
-                klog_info("app: %s v%s\n", meta.app_name, meta.version);
+                klog_sub_info("loader", "app: %s v%s\n", meta.app_name, meta.version);
             }
         }
     }
@@ -162,7 +162,7 @@ kern_return_t mango_loader_exec(mango_task_t *task,
 
     kal_pid_t pid;
     if (kal_process_spawn(&spawn, &pid) < 0) {
-        klog_err("fork failed\n");
+        klog_sub_err("loader", "fork failed\n");
         kal_unlink(tmp_path);
         return KERN_FAILURE;
     }
@@ -170,7 +170,7 @@ kern_return_t mango_loader_exec(mango_task_t *task,
     task->host_pid = pid;
     task->running = TRUE;
 
-    klog_info("loaded: %s (pid %d, task id %d)\n",
+    klog_sub_info("loader", "loaded: %s (pid %d, task id %d)\n",
               mach_path, pid, task->id);
 
     return KERN_SUCCESS;

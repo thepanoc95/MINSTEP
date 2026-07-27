@@ -64,14 +64,14 @@ mango_task_t *mango_current_task = NULL;
     mango_task_count = 1;
     mango_current_task = task;
 
-    klog_info("kernel task created (pid %d, bootstrap port %d)\n",
-              task->host_pid, task->bootstrap_port);
+    klog_sub_info("task", "kernel task (pid %d, bootstrap port %d)\n",
+                   task->host_pid, task->bootstrap_port);
     return KERN_SUCCESS;
 }
 
 - (kern_return_t)createTaskWithName:(const char *)name outTask:(mango_task_t **)out {
     if (mango_task_count >= TASK_MAX) {
-        klog_err("task table full\n");
+        klog_sub_err("task", "task table full\n");
         return KERN_NO_SPACE;
     }
 
@@ -107,8 +107,8 @@ mango_task_t *mango_current_task = NULL;
 
     mango_task_count++;
 
-    klog_info("task created: %s (id %d, bootstrap port %d)\n",
-              task->name, task->id, task->bootstrap_port);
+    klog_sub_info("task", "task created: %s (id %d, bootstrap port %d)\n",
+                   task->name, task->id, task->bootstrap_port);
 
     if (out) *out = task;
     return KERN_SUCCESS;
@@ -135,7 +135,7 @@ mango_task_t *mango_current_task = NULL;
     task->in_use = NO;
     mango_task_count--;
 
-    klog_info("task terminated: %s (id %d)\n", task->name, task->id);
+    klog_sub_info("task", "terminated: %s (id %d)\n", task->name, task->id);
     return KERN_SUCCESS;
 }
 
@@ -220,22 +220,22 @@ mango_task_t *mango_current_task = NULL;
     if (init_path_arg && init_path_arg[0]) {
         strncpy(init_path, init_path_arg, sizeof(init_path) - 1);
         init_path[sizeof(init_path) - 1] = '\0';
-        klog_info("using init: %s\n", init_path);
+        klog_sub_info("init", "using init: %s\n", init_path);
     } else {
         snprintf(init_path, sizeof(init_path), "%s/private/init", root);
-        klog_info("searching for init: %s\n", init_path);
+        klog_sub_info("init", "searching for init: %s\n", init_path);
     }
 
     if (access(init_path, X_OK) != 0) {
-        klog_warn("%s not found or not executable\n", init_path);
-        klog_notice("falling back to /sbin/init\n");
+        klog_sub_warn("init", "%s not found or not executable\n", init_path);
+        klog_sub_info("init", "falling back to /sbin/init\n");
         strncpy(init_path, "/sbin/init", sizeof(init_path) - 1);
     }
 
     mango_task_t *init_task = NULL;
     kern_return_t kr = [self createTaskWithName:"init" outTask:&init_task];
     if (kr != KERN_SUCCESS) {
-        klog_err("could not create init task\n");
+        klog_sub_err("init", "could not create init task (%d)\n", kr);
         return kr;
     }
 
@@ -246,7 +246,7 @@ mango_task_t *mango_current_task = NULL;
 
     pid_t pid = fork();
     if (pid < 0) {
-        klog_err("fork failed: %s\n", strerror(errno));
+        klog_sub_err("init", "fork failed: %s\n", strerror(errno));
         [self terminate:init_task];
         return KERN_FAILURE;
     }
@@ -257,14 +257,14 @@ mango_task_t *mango_current_task = NULL;
         snprintf(port_str, sizeof(port_str), "%d", init_task->bootstrap_port);
         setenv("MANGO_BOOTSTRAP_PORT", port_str, 1);
         execl(init_path, init_path, (char *)NULL);
-        klog_err("exec init failed: %s\n", strerror(errno));
+        klog_sub_err("init", "exec failed: %s\n", strerror(errno));
         (void)(1); /* _exit translated incorrectly by preprocessor */
     }
 
     init_task->host_pid = pid;
     init_task->running = YES;
 
-    klog_info("init launched (pid %d, task id %d)\n", pid, init_task->id);
+    klog_sub_info("init", "launched (pid %d, task id %d)\n", pid, init_task->id);
 
     return KERN_SUCCESS;
 }

@@ -27,14 +27,14 @@ kern_return_t ipc_init(void)
 
     ipc_bootstrap_port = mach_port_allocate(MACH_PORT_RIGHT_RECEIVE);
     if (ipc_bootstrap_port == MACH_PORT_NULL) {
-        klog_err("could not allocate bootstrap port\n");
+        klog_sub_err("ipc", "could not allocate bootstrap port\n");
         return KERN_FAILURE;
     }
 
     ipc_service_count = 0;
     memset(ipc_service_table, 0, sizeof(ipc_service_table));
 
-    klog_info("bootstrap port ready (port %d)\n", ipc_bootstrap_port);
+    klog_sub_info("ipc", "bootstrap port ready (port %d)\n", ipc_bootstrap_port);
     return KERN_SUCCESS;
 }
 
@@ -143,7 +143,7 @@ kern_return_t bootstrap_register(const char *name, mach_port_t port)
     entry->in_use = TRUE;
     ipc_service_count++;
 
-    klog_info("service registered: %s (port %d)\n", name, port);
+    klog_sub_info("ipc", "service registered: %s (port %d)\n", name, port);
     return KERN_SUCCESS;
 }
 
@@ -191,7 +191,7 @@ kern_return_t bootstrap_handle_request(mach_msg_t *request, mach_msg_t *reply)
     }
 
     default:
-        klog_warn("unknown bootstrap request: %d\n", id);
+        klog_sub_warn("ipc", "unknown bootstrap request: %d\n", id);
         return KERN_INVALID_ARGUMENT;
     }
 }

@@ -2,6 +2,19 @@
  * mango/mach/klog.c
  *
  * Kernel message logging implementation.
+ *
+ * Output format follows Linux/NetBSD dmesg conventions:
+ *
+ *     [    0.000000] MINSTEP v0.1.0 -- Mango Nanokernel
+ *     [    0.000001] [ipc] bootstrap port ready (port 3)
+ *     [    0.000002] [task] kernel task created (pid 42)
+ *     [    1.234567] WARNING: [task] task table 80% full
+ *     [    1.234568] error: [loader] failed to exec /bin/init
+ *
+ * Timestamps use 12-character fixed-width fields with 6 decimal places.
+ * Severity labels (WARNING:, error:) appear for levels WARN and above.
+ * Subsystem tags ([ipc], [task], etc.) are prepended by the caller using
+ * the klog_sub_* macros defined in klog.h.
  */
 
 #include "klog.h"
@@ -27,8 +40,8 @@ static int      _klog_clock_initialized = 0;
 /* -----------------------------------------------------------------------
  *  klog_init_clock
  *
- *  Capture the boot timestamp.  Safe to call multiple times;
- *  only the first call takes effect.
+ *  Capture the monotonic boot timestamp.  Idempotent -- only the
+ *  first call takes effect.
  * ----------------------------------------------------------------------- */
 
 void klog_init_clock(void)
@@ -66,17 +79,23 @@ double klog_time_since_boot(void)
 /* -----------------------------------------------------------------------
  *  klog_emit
  *
- *  Print a kernel message to stderr with a NetBSD-style timestamp.
+ *  Print a kernel message to stderr with a Linux/NetBSD-style timestamp.
  *
- *  Format: [  %9.7f] message
- *          ^          ^
- *          |          +-- the message text
- *          +-- timestamp with padding
+ *  Format:  [%12.6f] message
+ *           %12.6f   -- 12-char field, 6 decimal places
+ *                       e.g. [    0.000000]
  *
- *  Example output:
- *      [   0.0000000] Mango Nanokernel 0.1.0
- *      [   0.0012345] initializing IPC...
- *      [   2.1165136] err: port table full
+ *  For severity >= KLOG_WARN, a label is prepended:
+ *      WARN   -> WARNING:
+ *      ERR    -> error:
+ *      CRIT   -> CRIT:
+ *      ALERT  -> ALERT:
+ *      EMERG  -> EMERGENCY:
+ *      DEBUG  -> debug:
+ *
+ *  Subsystem tags (e.g. [ipc], [task]) are NOT added by klog_emit;
+ *  they are part of the caller's format string, added via klog_sub_*
+ *  macros in klog.h.
  * ----------------------------------------------------------------------- */
 
 void klog_emit(int level, const char *fmt, ...)
@@ -85,10 +104,32 @@ void klog_emit(int level, const char *fmt, ...)
 
     double elapsed = klog_time_since_boot();
 
-    /* Print timestamp prefix */
-    fprintf(stderr, "[%10.7f] ", elapsed);
+    /* Print timestamp + optional severity prefix */
+    switch (level) {
+    case KLOG_EMERG:
+        fprintf(stderr, "[%12.6f] EMERGENCY: ", elapsed);
+        break;
+    case KLOG_ALERT:
+        fprintf(stderr, "[%12.6f] ALERT: ", elapsed);
+        break;
+    case KLOG_CRIT:
+        fprintf(stderr, "[%12.6f] CRIT: ", elapsed);
+        break;
+    case KLOG_ERR:
+        fprintf(stderr, "[%12.6f] error: ", elapsed);
+        break;
+    case KLOG_WARN:
+        fprintf(stderr, "[%12.6f] WARNING: ", elapsed);
+        break;
+    case KLOG_DEBUG:
+        fprintf(stderr, "[%12.6f] debug: ", elapsed);
+        break;
+    default:
+        fprintf(stderr, "[%12.6f] ", elapsed);
+        break;
+    }
 
-    /* Print the message */
+    /* Print the message body */
     va_list ap;
     va_start(ap, fmt);
     vfprintf(stderr, fmt, ap);

@@ -3,18 +3,20 @@
  *
  * Kernel message logging implementation.
  *
- * Output format follows Linux/NetBSD dmesg conventions:
+ * Boot-time output follows NeXTSTEP Mach conventions -- plain
+ * descriptive text with no timestamps:
  *
- *     [    0.000000] MINSTEP v0.1.0 -- Mango Nanokernel
- *     [    0.000001] [ipc] bootstrap port ready (port 3)
- *     [    0.000002] [task] kernel task created (pid 42)
- *     [    1.234567] WARNING: [task] task table 80% full
- *     [    1.234568] error: [loader] failed to exec /bin/init
+ *     MINSTEP v0.1.0 -- Mango Nanokernel
+ *     Copyright (c) 2026 Miguel V. Mesquita. BSD License.
+ *     physical memory = 14.97 megabytes.
+ *     Bootstrap port allocated (port 3).
+ *     Task table initialized.
+ *     host port 2, host privilege port 3.
+ *     kernel initialization complete
  *
- * Timestamps use 12-character fixed-width fields with 6 decimal places.
- * Severity labels (WARNING:, error:) appear for levels WARN and above.
- * Subsystem tags ([ipc], [task], etc.) are prepended by the caller using
- * the klog_sub_* macros defined in klog.h.
+ * After boot, messages include a timestamp prefix:
+ *
+ *     [    0.000012] [task] process exited (pid 42, status 0)
  */
 
 #include "klog.h"
@@ -34,6 +36,7 @@
  * ----------------------------------------------------------------------- */
 
 int             klog_level = KLOG_INFO;
+int             klog_boot_mode = 1;
 static double   _klog_boot_seconds = 0.0;
 static int      _klog_clock_initialized = 0;
 
@@ -79,57 +82,49 @@ double klog_time_since_boot(void)
 /* -----------------------------------------------------------------------
  *  klog_emit
  *
- *  Print a kernel message to stderr with a Linux/NetBSD-style timestamp.
+ *  Print a kernel message to stderr.
  *
- *  Format:  [%12.6f] message
- *           %12.6f   -- 12-char field, 6 decimal places
- *                       e.g. [    0.000000]
+ *  During boot (klog_boot_mode == 1), messages are printed as plain
+ *  text with no timestamp prefix -- matching NeXTSTEP Mach style:
  *
- *  For severity >= KLOG_WARN, a label is prepended:
- *      WARN   -> WARNING:
- *      ERR    -> error:
- *      CRIT   -> CRIT:
- *      ALERT  -> ALERT:
- *      EMERG  -> EMERGENCY:
- *      DEBUG  -> debug:
+ *      Bootstrap port allocated (port 3).
+ *      Task table initialized.
  *
- *  Subsystem tags (e.g. [ipc], [task]) are NOT added by klog_emit;
- *  they are part of the caller's format string, added via klog_sub_*
- *  macros in klog.h.
+ *  After boot (klog_boot_mode == 0), a timestamp is prepended:
+ *
+ *      [    0.000012] [task] process exited (pid 42, status 0)
+ *      [    1.234567] WARNING: task table 80% full
  * ----------------------------------------------------------------------- */
 
 void klog_emit(int level, const char *fmt, ...)
 {
     if (level > klog_level) return;
 
-    double elapsed = klog_time_since_boot();
-
-    /* Print timestamp + optional severity prefix */
-    switch (level) {
-    case KLOG_EMERG:
-        fprintf(stderr, "[%12.6f] EMERGENCY: ", elapsed);
-        break;
-    case KLOG_ALERT:
-        fprintf(stderr, "[%12.6f] ALERT: ", elapsed);
-        break;
-    case KLOG_CRIT:
-        fprintf(stderr, "[%12.6f] CRIT: ", elapsed);
-        break;
-    case KLOG_ERR:
-        fprintf(stderr, "[%12.6f] error: ", elapsed);
-        break;
-    case KLOG_WARN:
-        fprintf(stderr, "[%12.6f] WARNING: ", elapsed);
-        break;
-    case KLOG_DEBUG:
-        fprintf(stderr, "[%12.6f] debug: ", elapsed);
-        break;
-    default:
-        fprintf(stderr, "[%12.6f] ", elapsed);
-        break;
+    if (klog_boot_mode) {
+        /* NeXTSTEP style: plain text, no timestamp */
+        switch (level) {
+        case KLOG_EMERG:  fprintf(stderr, "EMERGENCY: "); break;
+        case KLOG_ALERT:  fprintf(stderr, "ALERT: ");     break;
+        case KLOG_CRIT:   fprintf(stderr, "CRIT: ");      break;
+        case KLOG_ERR:    fprintf(stderr, "error: ");     break;
+        case KLOG_WARN:   fprintf(stderr, "WARNING: ");   break;
+        case KLOG_DEBUG:  fprintf(stderr, "debug: ");     break;
+        default: break;
+        }
+    } else {
+        /* Post-boot: timestamp prefix */
+        double elapsed = klog_time_since_boot();
+        switch (level) {
+        case KLOG_EMERG:  fprintf(stderr, "[%12.6f] EMERGENCY: ", elapsed); break;
+        case KLOG_ALERT:  fprintf(stderr, "[%12.6f] ALERT: ",     elapsed); break;
+        case KLOG_CRIT:   fprintf(stderr, "[%12.6f] CRIT: ",      elapsed); break;
+        case KLOG_ERR:    fprintf(stderr, "[%12.6f] error: ",     elapsed); break;
+        case KLOG_WARN:   fprintf(stderr, "[%12.6f] WARNING: ",   elapsed); break;
+        case KLOG_DEBUG:  fprintf(stderr, "[%12.6f] debug: ",     elapsed); break;
+        default:          fprintf(stderr, "[%12.6f] ",            elapsed); break;
+        }
     }
 
-    /* Print the message body */
     va_list ap;
     va_start(ap, fmt);
     vfprintf(stderr, fmt, ap);

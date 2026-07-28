@@ -21,14 +21,14 @@ mach_port_t         ipc_bootstrap_port = MACH_PORT_NULL;
     if (self) {
         ipc_bootstrap_port = mach_port_allocate(MACH_PORT_RIGHT_RECEIVE);
         if (ipc_bootstrap_port == MACH_PORT_NULL) {
-            klog_sub_err("ipc", "could not allocate bootstrap port\n");
+            klog_err("could not allocate bootstrap port\n");
         }
 
         ipc_service_count = 0;
         memset(ipc_service_table, 0, sizeof(ipc_service_table));
 
         if (ipc_bootstrap_port != MACH_PORT_NULL) {
-            klog_sub_info("ipc", "bootstrap port ready (port %d)\n", ipc_bootstrap_port);
+            klog_info("Bootstrap port allocated (port %d).\n", ipc_bootstrap_port);
         }
     }
     return self;

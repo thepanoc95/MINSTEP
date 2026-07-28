@@ -23,6 +23,19 @@ extern "C" {
 extern int klog_level;
 
 /* -----------------------------------------------------------------------
+ *  Boot mode
+ *
+ *  When klog_boot_mode is nonzero (the default), messages are printed
+ *  as plain text with no timestamp -- matching NeXTSTEP Mach style.
+ *  Call klog_end_boot() when initialization is complete to switch to
+ *  timestamped output.
+ * ----------------------------------------------------------------------- */
+
+extern int klog_boot_mode;
+
+static inline void klog_end_boot(void) { klog_boot_mode = 0; }
+
+/* -----------------------------------------------------------------------
  *  Core API
  * ----------------------------------------------------------------------- */
 
@@ -48,9 +61,12 @@ void klog_emit(int level, const char *fmt, ...)
 /* -----------------------------------------------------------------------
  *  Subsystem-tagged macros
  *
- *  These prepend a [subsystem] tag to the message, producing output like:
- *      [    0.000012] [ipc] bootstrap port ready (port 3)
- *      [    0.000023] [task] kernel task created (pid 42)
+ *  During boot these produce plain text:
+ *      Bootstrap port allocated (port 3).
+ *      Task table initialized.
+ *
+ *  After boot, a timestamp is prepended:
+ *      [    0.000012] [task] process exited (pid 42, status 0)
  * ----------------------------------------------------------------------- */
 
 #define klog_sub_info(sub, fmt, ...)   klog_emit(KLOG_INFO,   "[" sub "] " fmt, ##__VA_ARGS__)

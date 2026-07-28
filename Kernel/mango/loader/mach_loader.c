@@ -17,7 +17,7 @@
 kern_return_t mango_loader_init(void)
 {
     kal_mkdir(MACH_LOADER_TMPDIR, 0755);
-    klog_sub_info("loader", "ready (tmpdir: %s)\n", MACH_LOADER_TMPDIR);
+    klog_info("Binary loader ready (tmpdir: %s).\n", MACH_LOADER_TMPDIR);
     return KERN_SUCCESS;
 }
 

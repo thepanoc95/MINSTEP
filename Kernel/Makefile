@@ -74,7 +74,14 @@ MANGO_C_SRC = mango/main.c \
               mango/ipc/ipc_hash.c \
               mango/ipc/ipc_splay.c \
               mango/ipc/ipc_init.c \
-              mango/ipc/ipc_stubs.c
+              mango/ipc/ipc_stubs.c \
+              ../Developer/BSD/bsd.c \
+              ../Developer/BSD/bsd_ipc.c \
+              ../Developer/BSD/bsd_process.c \
+              ../Developer/BSD/bsd_fd.c \
+              ../Developer/BSD/bsd_signal.c \
+              ../Developer/BSD/bsd_memory.c \
+              ../Developer/BSD/bsd_syscall.c
 
 # Mango nanokernel -- Objective-C sources (compiled via objcc)
 MANGO_M_SRC = mango/mach/MangoKernel.m \
@@ -96,7 +103,14 @@ MANGO_C_OBJ = build/main.o \
               build/ipc_hash.o \
               build/ipc_splay.o \
               build/ipc_init.o \
-              build/ipc_stubs.o
+              build/ipc_stubs.o \
+              build/bsd.o \
+              build/bsd_ipc.o \
+              build/bsd_process.o \
+              build/bsd_fd.o \
+              build/bsd_signal.o \
+              build/bsd_memory.o \
+              build/bsd_syscall.o
 
 MANGO_M_OBJ = build/MangoKernel.o \
               build/MangoPort.o \
@@ -213,6 +227,28 @@ build/ipc_init.o: mango/ipc/ipc_init.c | build
 
 build/ipc_stubs.o: mango/ipc/ipc_stubs.c | build
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(INCLUDES) -Icompat -c -o $@ $<
+
+# BSD subsystem source files
+build/bsd.o: ../Developer/BSD/bsd.c | build
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(INCLUDES) -Icompat -c -o $@ $<
+
+build/bsd_ipc.o: ../Developer/BSD/bsd_ipc.c | build
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(INCLUDES) -c -o $@ $<
+
+build/bsd_process.o: ../Developer/BSD/bsd_process.c | build
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(INCLUDES) -c -o $@ $<
+
+build/bsd_fd.o: ../Developer/BSD/bsd_fd.c | build
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(INCLUDES) -c -o $@ $<
+
+build/bsd_signal.o: ../Developer/BSD/bsd_signal.c | build
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(INCLUDES) -c -o $@ $<
+
+build/bsd_memory.o: ../Developer/BSD/bsd_memory.c | build
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(INCLUDES) -c -o $@ $<
+
+build/bsd_syscall.o: ../Developer/BSD/bsd_syscall.c | build
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(INCLUDES) -c -o $@ $<
 
 # Objective-C object files (compiled via objcc preprocessor)
 build/MangoKernel.o: mango/mach/MangoKernel.m | build

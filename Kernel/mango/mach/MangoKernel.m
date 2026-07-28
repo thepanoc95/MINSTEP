@@ -76,29 +76,25 @@
     [self banner];
 
     if (flags & MANGO_BOOT_VERBOSE)
-        klog_info("[boot] flags: verbose\n");
+        klog_info("verbose boot\n");
     else
-        klog_info("[boot] flags: 0x%02x\n", (unsigned)flags);
-    klog_info("[boot] kernel: pid %d, uid 0\n", _kernel_pid);
+        klog_info("boot flags: 0x%02x\n", (unsigned)flags);
 
-    klog_info("[ipc] initializing bootstrap port\n");
     kr = ipc_init();
     if (kr != KERN_SUCCESS) {
-        klog_err("[ipc] init failed (%d)\n", kr);
+        klog_err("ipc init failed (%d)\n", kr);
         return kr;
     }
 
-    klog_info("[task] initializing task table\n");
     kr = mango_task_init();
     if (kr != KERN_SUCCESS) {
-        klog_err("[task] init failed (%d)\n", kr);
+        klog_err("task init failed (%d)\n", kr);
         return kr;
     }
 
-    klog_info("[loader] initializing binary loader\n");
     kr = mango_loader_init();
     if (kr != KERN_SUCCESS) {
-        klog_err("[loader] init failed (%d)\n", kr);
+        klog_err("loader init failed (%d)\n", kr);
         return kr;
     }
 
@@ -109,10 +105,11 @@
     _initialized = YES;
     _host_port = mach_port_allocate(MACH_PORT_RIGHT_RECEIVE);
     _host_priv_port = mach_port_allocate(MACH_PORT_RIGHT_RECEIVE);
-    klog_info("[mach] host port %d, host privilege port %d\n",
+    klog_info("host port %d, host privilege port %d\n",
               _host_port, _host_priv_port);
 
     klog_info("kernel initialization complete\n");
+    klog_end_boot();
     return KERN_SUCCESS;
 }
 
@@ -210,30 +207,28 @@
     if (init_path_arg && init_path_arg[0]) {
         strncpy(init_path, init_path_arg, sizeof(init_path) - 1);
         init_path[sizeof(init_path) - 1] = '\0';
-        klog_info("[init] using init: %s\n", init_path);
     } else {
         snprintf(init_path, sizeof(init_path), "%s/private/init", root);
-        klog_info("[init] searching for init: %s (root=%s)\n", init_path, root);
     }
 
     if (access(init_path, F_OK) != 0) {
-        klog_warn("[init] %s does not exist (errno=%d: %s)\n",
+        klog_warn("%s does not exist (errno=%d: %s)\n",
                   init_path, errno, strerror(errno));
-        klog_info("[boot] entering single-user mode\n");
+        klog_info("entering single-user mode\n");
         return KERN_FAILURE;
     }
 
     if (access(init_path, X_OK) != 0) {
-        klog_warn("[init] %s not executable (errno=%d: %s)\n",
+        klog_warn("%s not executable (errno=%d: %s)\n",
                   init_path, errno, strerror(errno));
-        klog_info("[boot] entering single-user mode\n");
+        klog_info("entering single-user mode\n");
         return KERN_FAILURE;
     }
 
     mango_task_t *init_task = NULL;
     kern_return_t kr = mango_task_create(&init_task, "init");
     if (kr != KERN_SUCCESS) {
-        klog_err("[init] could not create init task (%d)\n", kr);
+        klog_err("could not create init task (%d)\n", kr);
         return kr;
     }
 
@@ -244,7 +239,7 @@
 
     pid_t pid = fork();
     if (pid < 0) {
-        klog_err("[init] fork failed: %s\n", strerror(errno));
+        klog_err("fork failed: %s\n", strerror(errno));
         mango_task_terminate(init_task);
         return KERN_FAILURE;
     }
@@ -255,7 +250,7 @@
         snprintf(port_str, sizeof(port_str), "%d", init_task->bootstrap_port);
         setenv("MANGO_BOOTSTRAP_PORT", port_str, 1);
         execl(init_path, init_path, (char *)NULL);
-        klog_err("[init] exec failed: %s\n", strerror(errno));
+        klog_err("exec failed: %s\n", strerror(errno));
         ((void(*)(int))_exit)(1);
     }
 
@@ -263,7 +258,7 @@
     init_task->running = YES;
     _init_pid = pid;
 
-    klog_info("[init] launched (pid %d, task id %d)\n", pid, init_task->id);
+    klog_info("init started (pid %d)\n", pid);
 
     return KERN_SUCCESS;
 }
@@ -306,30 +301,28 @@ void mango_kernel_main(const char *init_path)
         if (init_path && init_path[0]) {
             strncpy(resolved, init_path, sizeof(resolved) - 1);
             resolved[sizeof(resolved) - 1] = '\0';
-            klog_info("[init] using init: %s\n", resolved);
         } else {
             snprintf(resolved, sizeof(resolved), "%s/private/init", root);
-            klog_info("[init] searching for init: %s\n", resolved);
             if (access(resolved, X_OK) != 0) {
-                klog_warn("[init] %s not executable, falling back to /sbin/init\n", resolved);
+                klog_warn("%s not executable, falling back to /sbin/init\n", resolved);
                 strncpy(resolved, "/sbin/init", sizeof(resolved) - 1);
             }
         }
 
         pid_t pid = fork();
         if (pid < 0) {
-            klog_err("[init] fork failed: %s\n", strerror(errno));
+            klog_err("fork failed: %s\n", strerror(errno));
         } else if (pid == 0) {
             setenv("USERFSROOT", root, 1);
             execl(resolved, resolved, (char *)NULL);
-            klog_err("[init] exec failed: %s\n", strerror(errno));
+            klog_err("exec failed: %s\n", strerror(errno));
             ((void(*)(int))_exit)(1);
         } else {
             _shared_kernel->_init_pid = pid;
-            klog_info("[init] launched (pid %d)\n", pid);
+            klog_info("init started (pid %d)\n", pid);
         }
     } else {
-        klog_info("[boot] single-user mode, skipping init\n");
+        klog_info("single-user mode, skipping init\n");
     }
 
     [_shared_kernel loop];

@@ -4,15 +4,8 @@
  * Main kernel entry point and lifecycle management for the
  * Mango nanokernel.
  *
- * Boot output follows Linux/NetBSD conventions:
- *
- *     [    0.000000] MINSTEP v0.1.0 -- Mango Nanokernel
- *     [    0.000000] Copyright (c) 2026 Miguel V. Mesquita. BSD License.
- *     [    0.000000] command line: mach -v
- *     [    0.000000] kernel: pid 42, uid 0
- *     [    0.000001] [ipc] initializing bootstrap port
- *     [    0.000012] [ipc] bootstrap port ready (port 3)
- *     ...
+ * Boot output follows NeXTSTEP Mach conventions -- plain
+ * descriptive text with no timestamps.
  */
 
 #include "mach_kernel.h"
@@ -55,43 +48,37 @@ kern_return_t mango_kernel_init(uint32_t boot_flags)
 {
     kern_return_t kr;
 
-    /* Initialize the clock first so all subsequent messages have
-     * meaningful timestamps. */
     klog_init_clock();
 
     memset(&_mango_kernel, 0, sizeof(_mango_kernel));
     _mango_kernel.boot_flags = boot_flags;
     _mango_kernel.kernel_pid = kal_getpid();
 
-    /* Boot header */
     mango_kernel_banner();
+
     if (boot_flags & MANGO_BOOT_VERBOSE)
-        klog_info("[boot] flags: verbose\n");
+        klog_info("verbose boot\n");
     else
-        klog_info("[boot] flags: 0x%02x\n", (unsigned)boot_flags);
-    klog_info("[boot] kernel: pid %d, uid 0\n", _mango_kernel.kernel_pid);
+        klog_info("boot flags: 0x%02x\n", (unsigned)boot_flags);
 
     /* IPC subsystem */
-    klog_info("[ipc] initializing bootstrap port\n");
     kr = ipc_init();
     if (kr != KERN_SUCCESS) {
-        klog_err("[ipc] init failed (%d)\n", kr);
+        klog_err("ipc init failed (%d)\n", kr);
         return kr;
     }
 
     /* Task subsystem */
-    klog_info("[task] initializing task table\n");
     kr = mango_task_init();
     if (kr != KERN_SUCCESS) {
-        klog_err("[task] init failed (%d)\n", kr);
+        klog_err("task init failed (%d)\n", kr);
         return kr;
     }
 
     /* Loader subsystem */
-    klog_info("[loader] initializing binary loader\n");
     kr = mango_loader_init();
     if (kr != KERN_SUCCESS) {
-        klog_err("[loader] init failed (%d)\n", kr);
+        klog_err("loader init failed (%d)\n", kr);
         return kr;
     }
 
@@ -104,10 +91,14 @@ kern_return_t mango_kernel_init(uint32_t boot_flags)
     _mango_kernel.initialized = TRUE;
     _mango_kernel.host_port = mach_port_allocate(MACH_PORT_RIGHT_RECEIVE);
     _mango_kernel.host_priv_port = mach_port_allocate(MACH_PORT_RIGHT_RECEIVE);
-    klog_info("[mach] host port %d, host privilege port %d\n",
+    klog_info("host port %d, host privilege port %d\n",
               _mango_kernel.host_port, _mango_kernel.host_priv_port);
 
     klog_info("kernel initialization complete\n");
+
+    /* Switch to timestamped output for runtime messages */
+    klog_end_boot();
+
     return KERN_SUCCESS;
 }
 
@@ -238,10 +229,10 @@ void mango_kernel_main(const char *init_path)
     if (!(flags & MANGO_BOOT_SINGLE_USER)) {
         kr = mango_launch_init(mango_get_userfs_root(), init_path);
         if (kr != KERN_SUCCESS) {
-            klog_warn("[init] launch failed (%d), entering single-user mode\n", kr);
+            klog_warn("init launch failed (%d), entering single-user mode\n", kr);
         }
     } else {
-        klog_info("[boot] single-user mode, skipping init\n");
+        klog_info("single-user mode, skipping init\n");
     }
 
     mango_kernel_loop();

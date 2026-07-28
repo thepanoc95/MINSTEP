@@ -1,0 +1,1129 @@
+\documentclass[a4paper,11pt]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{listings}
+\usepackage{color}
+\usepackage{hyperref}
+\usepackage{parskip}
+\usepackage{enumitem}
+\usepackage{tabularx}
+\usepackage{xcolor}
+\usepackage{titlesec}
+
+\definecolor{codegreen}{rgb}{0,0.6,0}
+\definecolor{codegray}{rgb}{0.5,0.5,0.5}
+\definecolor{codepurple}{rgb}{0.58,0,0.82}
+\definecolor{backcolour}{rgb}{0.95,0.95,0.92}
+
+\lstdefinestyle{mystyle}{
+    backgroundcolor=\color{backcolour},
+    commentstyle=\color{codegreen},
+    keywordstyle=\color{magenta},
+    numberstyle=\tiny\color{codegray},
+    stringstyle=\color{codepurple},
+    basicstyle=\ttfamily\footnotesize,
+    breakatwhitespace=false,
+    breaklines=true,
+    captionpos=b,
+    keepspaces=true,
+    numbers=none,
+    numbersep=5pt,
+    showspaces=false,
+    showstringspaces=false,
+    showtabs=false,
+    tabsize=2,
+    language=C,
+    frame=single,
+}
+\lstset{style=mystyle}
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue,
+    urlcolor=blue,
+    citecolor=blue
+}
+
+\title{Maxxwell Server Interface (MXSI) \\ \large Server Programming Guide}
+\author{The Maxxwell Kernel Team}
+\date{Version 1.0 -- July 2026}
+
+\begin{document}
+
+\maketitle
+\thispagestyle{empty}
+\newpage
+
+\tableofcontents
+\newpage
+
+\section{Introduction}
+
+The Maxxwell Server Interface (MXSI) is a server management framework
+built into the Maxxwell hosted microkernel. It provides the
+infrastructure for userspace servers to register, communicate, and
+be managed by the kernel throughout their lifecycle.
+
+MXSI treats every userspace service as a {\em server} --- an
+independent process with a well-defined identity, a set of
+capabilities, and a message-based communication channel managed by
+the kernel. This design enables strong isolation, structured
+service discovery, and centralized lifecycle control.
+
+This document serves as a guide for developers who wish to write new
+servers for the Maxxwell operating system. It covers the
+architecture, the C API exposed by MXSI, and presents a complete
+worked example.
+
+\subsection{Core Concepts}
+
+\begin{description}[leftmargin=2cm,style=nextline]
+  \item[Server] A named, registered userspace process with a unique
+    ID, a state machine, and one or more Mach ports for communication.
+  \item[Registry] A kernel-maintained directory of all live servers,
+    indexed by ID, name, and capability.
+  \item[Capability] A bitmask that describes what a server can do
+    (e.g., filesystem, networking, display). Clients discover servers
+    by querying capabilities.
+  \item[Message] A structured kernel-mediated datagram that carries
+    a type, flags, a sender port, a destination port, and a
+    variable-length payload.
+  \item[Manager] The kernel subsystem responsible for starting,
+    stopping, and restarting servers.
+  \item[Bootstrap] The boot-time sequence that brings up the first
+    server and, if that fails, falls back to the MsWaiter kernel
+    monitor.
+\end{description}
+
+\section{Architecture Overview}
+
+\subsection{Layers}
+
+MXSI is composed of six subsystems, each exposed through a header
+in \texttt{Kernel/mxwl/server/}:
+
+\begin{center}
+\begin{tabularx}{\textwidth}{|l|X|}
+\hline
+\textbf{Module} & \textbf{Purpose} \\
+\hline
+\texttt{server.h/c}   & Core server object --- data structures,
+                        state machine, initialisation and teardown. \\
+\texttt{registry.h/c} & Server directory --- insertion, removal,
+                        lookup by ID, name, or capability. \\
+\texttt{manager.h/c}  & Lifecycle control --- start, stop,
+                        restart, poll, MsWaiter command dispatch. \\
+\texttt{message.h/c}  & Message definition and manipulation ---
+                        create, validate, duplicate, destroy. \\
+\texttt{ipc.h/c}      & IPC transport layer --- send, reply,
+                        broadcast, notify, RPC, endpoint management. \\
+\texttt{loader.h/c}   & Server executable loader --- load, unload,
+                        start, stop, IPC setup, readiness wait. \\
+\texttt{bootstrap.h/c}& Boot sequence --- init, configure, start
+                        default servers, MsWaiter fallback. \\
+\hline
+\end{tabularx}
+\end{center}
+
+\subsection{Kernel Mediation}
+
+All inter-server communication passes through the kernel. When server
+A sends a message to server B, the kernel:
+
+\begin{enumerate}
+  \item Validates the message header and payload.
+  \item Verifies that server B is in the \texttt{READY} or
+    \texttt{WAITING} state.
+  \item Resolves B's endpoint port from the registry.
+  \item Delivers the message to B's receive queue.
+  \item Optionally invokes a global monitor callback.
+\end{enumerate}
+
+This design gives the kernel full visibility into all IPC traffic,
+enabling debugging, tracing, and access control.
+
+\begin{center}
+\texttt{\small
+  Server A -\hbox{-}$>${\bf kernel} -\hbox{-}$>$ Server B
+}
+\end{center}
+
+\section{Server Lifecycle}
+
+\subsection{State Machine}
+
+Every server transitions through the following states:
+
+\begin{center}
+\begin{tabularx}{\textwidth}{|c|X|}
+\hline
+\textbf{State} & \textbf{Meaning} \\
+\hline
+\texttt{STOPPED}  & Not loaded or initialised. \\
+\texttt{LOADING}  & Server executable is being loaded into memory. \\
+\texttt{STARTING} & Server process has been spawned. \\
+\texttt{READY}    & Server is running and accepting requests. \\
+\texttt{WAITING}  & Server is idle, waiting for external events. \\
+\texttt{FAILED}   & Server failed during start-up. \\
+\texttt{PANIC}    & Server encountered an unrecoverable error. \\
+\texttt{STOPPING} & Server is being shut down. \\
+\hline
+\end{tabularx}
+\end{center}
+
+\subsection{Initialisation}
+
+Every server begins as a \texttt{mx\_server\_t} object allocated by
+the kernel or the bootstrap code. Initialisation sets the name,
+assigns a unique numeric ID, and resets all fields:
+
+\begin{lstlisting}
+#include <mxsi.h>
+
+mx_server_t *my_server = libkern_calloc(1, sizeof(mx_server_t));
+kern_return_t kr = mx_server_init(my_server, "my-server");
+if (kr != KERN_SUCCESS) {
+    /* handle error */
+}
+\end{lstlisting}
+
+After \texttt{mx\_server\_init}, the server is in the
+\texttt{STOPPED} state. The server's capabilities, flags, and path
+should be set before it is registered:
+
+\begin{lstlisting}
+my_server->capabilities = MX_CAP_PROCESS | MX_CAP_IPC;
+my_server->flags        = MX_SERVER_SYSTEM | MX_SERVER_AUTOSTART;
+libkern_strncpy(my_server->path, "/mach/servers/my-server",
+                MX_SERVER_PATH_MAX - 1);
+\end{lstlisting}
+
+\subsection{Registration}
+
+Before a server can be managed or addressed, it must be registered
+with the kernel's registry:
+
+\begin{lstlisting}
+kern_return_t kr = mx_server_register(my_server);
+if (kr == KERN_NAME_EXISTS) {
+    /* A server with this name already exists */
+}
+\end{lstlisting}
+
+\subsection{Teardown}
+
+When a server is removed from the system, it should be unregistered
+and destroyed:
+
+\begin{lstlisting}
+mx_server_unregister(my_server);
+mx_server_destroy(my_server);
+libkern_free(my_server);
+\end{lstlisting}
+
+\section{The Registry}
+
+The registry is a kernel-maintained directory of all servers. It
+supports four kinds of lookup:
+
+\subsection{Lookup by ID}
+
+\begin{lstlisting}
+mx_server_t *srv = mx_server_lookup_id(42);
+\end{lstlisting}
+
+\subsection{Lookup by Name}
+
+\begin{lstlisting}
+mx_server_t *srv = mx_server_lookup_name("4bsd");
+\end{lstlisting}
+
+\subsection{Lookup by Capability}
+
+Returns the first server that has the exact capability:
+
+\begin{lstlisting}
+mx_server_t *srv = mx_server_lookup_capability(MX_CAP_FILESYSTEM);
+\end{lstlisting}
+
+\subsection{Lookup by Capability Mask}
+
+Returns the first server that has {\em any} of the given
+capabilities:
+
+\begin{lstlisting}
+mx_server_t *srv = mx_server_lookup_capability_any(
+    MX_CAP_DISPLAY | MX_CAP_INPUT);
+\end{lstlisting}
+
+\subsection{Fuzzy Search}
+
+The \texttt{mx\_server\_find} function accepts a query string that
+may match a server by name or ID (parsed as an integer):
+
+\begin{lstlisting}
+mx_server_t *srv;
+kern_return_t kr = mx_server_find("4bsd", &srv);
+\end{lstlisting}
+
+\subsection{Enumeration}
+
+The registry supports iteration over all servers:
+
+\begin{lstlisting}
+mx_server_t *s = mx_server_first();
+while (s) {
+    printf("server: %s\n", s->name);
+    s = mx_server_next(s);
+}
+\end{lstlisting}
+
+To get a snapshot of server info into a caller-supplied buffer:
+
+\begin{lstlisting}
+mx_server_info_t buf[64];
+int n = mx_server_list(buf, 64);
+\end{lstlisting}
+
+\subsection{Constants}
+
+\begin{lstlisting}
+#define MX_SERVER_MAX     64  /* maximum registered servers */
+#define MX_SERVER_NAME_MAX    64
+#define MX_SERVER_VERSION_MAX 32
+#define MX_SERVER_PATH_MAX    256
+\end{lstlisting}
+
+\section{Messages}
+
+All inter-server communication is carried by \texttt{mx\_message\_t}
+objects. A message has a fixed header and a variable-length payload
+stored in a flexible array member.
+
+\subsection{Message Structure}
+
+\begin{lstlisting}
+typedef struct mx_message {
+    mach_port_t   sender;        /* port of the sending server  */
+    mach_port_t   destination;   /* port of the target server   */
+    uint32_t      msg_id;        /* application-defined ID      */
+    mx_msg_type_t type;          /* SYNC, ASYNC, NOTIFY, etc.   */
+    uint32_t      payload_size;  /* size of payload in bytes    */
+    uint32_t      flags;         /* MX_MSG_* flags              */
+    uint8_t       payload[];     /* variable-length data        */
+} mx_message_t;
+\end{lstlisting}
+
+\subsection{Message Types}
+
+\begin{center}
+\begin{tabularx}{\textwidth}{|c|X|}
+\hline
+\textbf{Type} & \textbf{Semantics} \\
+\hline
+\texttt{MX\_MSG\_SYNC}    & Sender blocks waiting for a reply.\\
+\texttt{MX\_MSG\_ASYNC}   & Fire-and-forget: no reply is expected.\\
+\texttt{MX\_MSG\_NOTIFY}  & One-way event notification.\\
+\texttt{MX\_MSG\_REPLY}   & Response to a previous message.\\
+\texttt{MX\_MSG\_REQUEST} & A typed request (application-level).\\
+\texttt{MX\_MSG\_RESPONSE}& A typed response.\\
+\hline
+\end{tabularx}
+\end{center}
+
+\subsection{Message Flags}
+
+\begin{lstlisting}
+MX_MSG_NONE         = 0
+MX_MSG_URGENT       = (1 << 0)   /* high-priority delivery */
+MX_MSG_EXPECT_REPLY = (1 << 1)   /* sender expects a reply */
+MX_MSG_REPLY        = (1 << 2)   /* this is itself a reply */
+MX_MSG_BROADCAST    = (1 << 3)   /* intended for broadcast */
+MX_MSG_NOTIFY       = (1 << 4)   /* notification message   */
+\end{lstlisting}
+
+\subsection{Creating Messages}
+
+\begin{lstlisting}
+mx_message_t *msg;
+kern_return_t kr = mx_msg_create(
+    &msg,               /* output pointer          */
+    sender_port,        /* source port             */
+    dest_port,          /* destination port        */
+    0x1000,             /* message ID              */
+    MX_MSG_SYNC,        /* type                    */
+    MX_MSG_NONE,        /* flags                   */
+    data,               /* payload pointer         */
+    data_size           /* payload size            */
+);
+\end{lstlisting}
+
+\subsection{Destroying Messages}
+
+\begin{lstlisting}
+mx_msg_destroy(msg);
+\end{lstlisting}
+
+\subsection{Validation and Duplication}
+
+\begin{lstlisting}
+kern_return_t kr = mx_msg_validate(msg);
+mx_message_t *copy = mx_msg_dup(msg);
+\end{lstlisting}
+
+\subsection{Utility}
+
+\begin{lstlisting}
+uint32_t total = mx_msg_total_size(msg);
+\end{lstlisting}
+
+Returns the sum of the header size and the payload size.
+
+\section{IPC Transport Layer}
+
+The IPC module provides the functions that actually deliver messages
+between servers. It operates on Mach ports that are allocated during
+server endpoint creation.
+
+\subsection{Endpoint Management}
+
+Each server has two ports:
+\begin{itemize}
+  \item \textbf{endpoint} --- the service port where clients send
+    requests.
+  \item \textbf{mgmt\_port} --- the management port used by the
+    kernel for lifecycle control (stop, restart, etc.).
+\end{itemize}
+
+\begin{lstlisting}
+kern_return_t kr = mx_ipc_server_endpoint_create(my_server);
+if (kr == KERN_SUCCESS) {
+    /* my_server->endpoint and my_server->mgmt_port are now valid */
+}
+\end{lstlisting}
+
+Destroy endpoints when the server is unloaded:
+
+\begin{lstlisting}
+mx_ipc_server_endpoint_destroy(my_server);
+\end{lstlisting}
+
+\subsection{Sending Messages}
+
+\subsubsection{Unicast Send}
+
+Send a message to a specific server:
+
+\begin{lstlisting}
+kern_return_t kr = mx_server_send(target_server, msg);
+\end{lstlisting}
+
+The kernel checks that the target is in \texttt{READY} or
+\texttt{WAITING} state and that its endpoint port is valid.
+
+\subsubsection{Reply}
+
+Reply to a previously received request:
+
+\begin{lstlisting}
+kern_return_t kr = mx_server_reply(request_msg, reply_msg);
+\end{lstlisting}
+
+The reply's destination is automatically set to the original
+sender's port.
+
+\subsubsection{Broadcast}
+
+Send a message to all servers whose capabilities match a given mask:
+
+\begin{lstlisting}
+kern_return_t kr = mx_server_broadcast(
+    MX_CAP_FILESYSTEM | MX_CAP_STORAGE, msg);
+\end{lstlisting}
+
+\subsubsection{Notification}
+
+Send a one-way event notification to a server:
+
+\begin{lstlisting}
+kern_return_t kr = mx_server_notify(target, event_id,
+                                    data, data_size);
+\end{lstlisting}
+
+\subsubsection{Synchronous RPC}
+
+Send a request and block until a reply arrives:
+
+\begin{lstlisting}
+mx_message_t *reply = NULL;
+kern_return_t kr = mx_server_rpc(target, request,
+                                 &reply, timeout_ms);
+if (kr == KERN_SUCCESS) {
+    /* process reply */
+    mx_msg_destroy(reply);
+}
+\end{lstlisting}
+
+\subsection{Polling}
+
+The kernel calls \texttt{mx\_ipc\_poll()} to drain pending messages
+from all server endpoints. Servers that integrate with the kernel's
+event loop do not need to call this directly; the manager invokes it
+from \texttt{mx\_manager\_poll()}.
+
+\subsection{Monitoring}
+
+A global callback can be installed to observe every message that
+passes through the IPC layer:
+
+\begin{lstlisting}
+void my_monitor(mx_message_t *msg, void *ctx) {
+    klog_info("msg %d sent\n", msg->msg_id);
+}
+
+mx_ipc_set_monitor(my_monitor, NULL);
+\end{lstlisting}
+
+This is used by MsWaiter's tracing feature.
+
+\section{Server Manager}
+
+The manager is the kernel subsystem that controls the server
+lifecycle. It ties together the registry, loader, and IPC layer.
+
+\subsection{Lifecycle Functions}
+
+\begin{lstlisting}
+/* Start a server by its registry ID or name */
+kern_return_t mx_server_start(server_id);
+kern_return_t mx_server_start_by_name("my-server");
+
+/* Stop a running server */
+kern_return_t mx_server_stop(server_id);
+kern_return_t mx_server_stop_by_name("my-server");
+
+/* Restart (stop then start) */
+kern_return_t mx_server_restart(server_id);
+kern_return_t mx_server_restart_by_name("my-server");
+\end{lstlisting}
+
+\subsection{Direct Server Operations}
+
+When a \texttt{mx\_server\_t*} pointer is already available:
+
+\begin{lstlisting}
+kern_return_t kr = mx_manager_start_server(server);
+kern_return_t kr = mx_manager_stop_server(server);
+kern_return_t kr = mx_manager_restart_server(server);
+\end{lstlisting}
+
+\subsection{Initialisation and Shutdown}
+
+\begin{lstlisting}
+kern_return_t kr = mx_manager_init();
+/* ... */
+mx_manager_shutdown();
+\end{lstlisting}
+
+\subsection{Command Dispatch}
+
+The manager provides a command dispatch function used by the
+MsWaiter kernel monitor. It accepts argc/argv arrays and routes
+them to internal command handlers:
+
+\begin{lstlisting}
+char out[4096];
+kern_return_t kr = mx_manager_handle_command(
+    2, (char *[]){"start", "4bsd", NULL}, out, sizeof(out));
+printf("%s\n", out);
+\end{lstlisting}
+
+Supported commands:
+
+\begin{center}
+\begin{tabularx}{\textwidth}{|l|X|}
+\hline
+\textbf{Command} & \textbf{Description} \\
+\hline
+\texttt{servers}   & List all registered servers. \\
+\texttt{start}     & Start a server by name. \\
+\texttt{stop}      & Stop a server by name. \\
+\texttt{restart}   & Restart a server by name. \\
+\texttt{info}      & Show detailed information about a server. \\
+\texttt{trace}     & Enable/disable IPC tracing for a server. \\
+\texttt{panic}     & Manually set a server to PANIC state. \\
+\hline
+\end{tabularx}
+\end{center}
+
+\section{Loader}
+
+The loader subsystem is responsible for loading a server executable,
+creating the host process (via fork/exec on POSIX), setting up IPC
+endpoints, and waiting for the server to signal readiness.
+
+\subsection{Load and Unload}
+
+\begin{lstlisting}
+kern_return_t kr = mx_loader_load(server, "/path/to/server");
+kern_return_t kr = mx_loader_unload(server);
+\end{lstlisting}
+
+\subsection{Start and Stop}
+
+\begin{lstlisting}
+kern_return_t kr = mx_loader_start(server);
+kern_return_t kr = mx_loader_stop(server);
+\end{lstlisting}
+
+\subsection{IPC Setup and Readiness}
+
+\begin{lstlisting}
+kern_return_t kr = mx_loader_setup_ipc(server);
+kern_return_t kr = mx_loader_wait_ready(server, timeout_ms);
+\end{lstlisting}
+
+The readiness wait blocks until the server sends a \texttt{READY}
+notification on its management port, or until the timeout expires.
+
+\section{Capabilities}
+
+Capabilities are a bitmask that servers advertise at registration
+time. They allow clients to discover the right server for a given
+task without knowing its name or ID.
+
+\subsection{Capability Constants}
+
+\begin{lstlisting}
+MX_CAP_NONE       = 0
+MX_CAP_FILESYSTEM = (1 << 0)   /* filesystem services      */
+MX_CAP_DISPLAY    = (1 << 1)   /* display / framebuffer    */
+MX_CAP_NETWORK    = (1 << 2)   /* networking stack         */
+MX_CAP_AUDIO      = (1 << 3)   /* audio services           */
+MX_CAP_PROCESS    = (1 << 4)   /* process management       */
+MX_CAP_BSD        = (1 << 5)   /* BSD compatibility layer  */
+MX_CAP_DEVICE     = (1 << 6)   /* device I/O access        */
+MX_CAP_STORAGE    = (1 << 7)   /* block storage            */
+MX_CAP_IPC        = (1 << 8)   /* IPC forwarding services  */
+MX_CAP_MONITOR    = (1 << 9)   /* system monitoring        */
+MX_CAP_INPUT      = (1 << 10)  /* input handling           */
+MX_CAP_BOOTSTRAP  = (1U << 31) /* bootstrap server         */
+\end{lstlisting}
+
+\subsection{Capability String}
+
+Convert a capability bitmask to a human-readable comma-separated
+string:
+
+\begin{lstlisting}
+char buf[MX_SERVER_CAPS_STR_MAX];
+const char *str = mx_server_caps_string(server->capabilities,
+                                         buf, sizeof(buf));
+\end{lstlisting}
+
+\section{Bootstrap Sequence}
+
+The bootstrap subsystem orchestrates the initial server start-up
+when the kernel boots.
+
+\subsection{Boot Flow}
+
+\begin{enumerate}
+  \item The kernel initialises: IPC subsystem $\rightarrow$ tasks
+    $\rightarrow$ loader $\rightarrow$ MsWaiter monitor.
+  \item \texttt{mx\_bootstrap\_init()} initialises the bootstrap
+    configuration with a 30-second timeout and autostart enabled.
+  \item If a boot argument \texttt{-srv=/path/to/server} was
+    provided, that path is saved.
+  \item \texttt{mx\_bootstrap\_start()} initialises the registry,
+    the IPC layer, the loader, and the manager in sequence.
+  \item \texttt{mx\_bootstrap\_sequence()} runs:
+    \begin{enumerate}
+      \item If a configured server path exists, it attempts to load
+        and start that server as the bootstrap server with
+        \texttt{MX\_CAP\_BOOTSTRAP | MX\_CAP\_PROCESS | MX\_CAP\_IPC}
+        capabilities.
+      \item If the configured server fails or no path was given,
+        \texttt{mx\_bootstrap\_launch\_mswaiter()} is called,
+        which enters the kernel-resident MsWaiter monitor.
+    \end{enumerate}
+\end{enumerate}
+
+\subsection{API Reference}
+
+\begin{lstlisting}
+kern_return_t mx_bootstrap_init(void);
+kern_return_t mx_bootstrap_configure(const char *boot_args);
+
+kern_return_t mx_bootstrap_start(void);
+
+kern_return_t mx_bootstrap_start_server(
+    const char *name,
+    const char *path,
+    uint32_t capabilities);
+
+kern_return_t mx_bootstrap_launch_mswaiter(void);
+kern_return_t mx_bootstrap_sequence(void);
+
+const char  *mx_bootstrap_get_server_path(void);
+\end{lstlisting}
+
+\subsection{Adding a Server to the Bootstrap}
+
+Servers can be added to the boot sequence by calling
+\texttt{mx\_bootstrap\_start\_server} from a custom bootstrap
+implementation:
+
+\begin{lstlisting}
+mx_bootstrap_start_server(
+    "my-server",
+    "/mach/servers/my-server",
+    MX_CAP_FILESYSTEM | MX_CAP_STORAGE);
+\end{lstlisting}
+
+\section{Complete Example: A Minimal Server}
+
+This section walks through a complete server that registers with the
+kernel, handles a simple ping request, and shuts down gracefully. It
+is intended as a template for new server authors.
+
+\subsection{Source Code}
+
+\begin{lstlisting}
+/* my_server.c -- minimal MXSI server */
+
+#include <mxsi.h>
+#include <stdio.h>
+#include <string.h>
+#include <unistd.h>
+
+#define MY_SERVER_NAME   "my-server"
+#define MY_SERVER_VERSION "1.0"
+#define MSG_PING         0x1000
+#define MSG_SHUTDOWN     0x1001
+
+/* ------------------------------------------------------------------ */
+/*  Message handler                                                    */
+/* ------------------------------------------------------------------ */
+
+static kern_return_t handle_ping(mx_message_t *msg,
+                                  mx_message_t **reply)
+{
+    return mx_msg_create(reply, MACH_PORT_NULL, msg->sender,
+                         0x2000, MX_MSG_REPLY, MX_MSG_NONE,
+                         "pong", 5);
+}
+
+static kern_return_t handle_shutdown(mx_message_t *msg,
+                                      mx_message_t **reply)
+{
+    (void)msg;
+    (void)reply;
+    exit(0);
+    return KERN_SUCCESS;
+}
+
+/* ------------------------------------------------------------------ */
+/*  Dispatch loop                                                      */
+/* ------------------------------------------------------------------ */
+
+static void dispatch_loop(mx_server_t *server)
+{
+    while (1) {
+        /* Receive a message on our endpoint */
+        mx_message_t msg;
+        kern_return_t kr = mach_msg_receive(
+            server->endpoint, (mach_msg_t *)&msg,
+            sizeof(msg) + MX_MSG_MAX_PAYLOAD, 1000);
+
+        if (kr != KERN_SUCCESS)
+            continue;
+
+        mx_message_t *reply = NULL;
+
+        switch (msg.msg_id) {
+        case MSG_PING:
+            handle_ping(&msg, &reply);
+            break;
+        case MSG_SHUTDOWN:
+            handle_shutdown(&msg, &reply);
+            break;
+        default:
+            /* unknown message -- ignore */
+            break;
+        }
+
+        if (reply) {
+            mx_server_reply(&msg, reply);
+            mx_msg_destroy(reply);
+        }
+    }
+}
+
+/* ------------------------------------------------------------------ */
+/*  Main entry point                                                   */
+/* ------------------------------------------------------------------ */
+
+int main(int argc, char *argv[])
+{
+    (void)argc;
+    (void)argv;
+
+    /* ---- 1. Create and initialise the server object ---- */
+    mx_server_t *server = calloc(1, sizeof(mx_server_t));
+    kern_return_t kr = mx_server_init(server, MY_SERVER_NAME);
+    if (kr != KERN_SUCCESS) {
+        fprintf(stderr, "mx_server_init failed: %d\n", kr);
+        return 1;
+    }
+
+    libkern_strncpy(server->version, MY_SERVER_VERSION,
+                    MX_SERVER_VERSION_MAX - 1);
+    server->capabilities = MX_CAP_NONE;
+    server->flags = MX_SERVER_SYSTEM;
+
+    /* ---- 2. Register with the kernel ---- */
+    kr = mx_server_register(server);
+    if (kr != KERN_SUCCESS) {
+        fprintf(stderr, "mx_server_register failed: %d\n", kr);
+        mx_server_destroy(server);
+        free(server);
+        return 1;
+    }
+
+    /* ---- 3. Set up IPC endpoints ---- */
+    kr = mx_ipc_server_endpoint_create(server);
+    if (kr != KERN_SUCCESS) {
+        fprintf(stderr, "endpoint creation failed: %d\n", kr);
+        mx_server_unregister(server);
+        mx_server_destroy(server);
+        free(server);
+        return 1;
+    }
+
+    /* ---- 4. Signal READY to the kernel ---- */
+    mx_server_set_state(server, MX_SERVER_READY);
+
+    mx_message_t *ready_msg = NULL;
+    mx_msg_create(&ready_msg, MACH_PORT_NULL,
+                  server->mgmt_port, 0x80000001,
+                  MX_MSG_NOTIFY, MX_MSG_NONE, NULL, 0);
+    if (ready_msg) {
+        mach_msg_send(server->mgmt_port,
+                      (mach_msg_t *)ready_msg,
+                      mx_msg_total_size(ready_msg), 1000);
+        mx_msg_destroy(ready_msg);
+    }
+
+    fprintf(stderr, "%s v%s READY on endpoint %d\n",
+            MY_SERVER_NAME, MY_SERVER_VERSION, server->endpoint);
+
+    /* ---- 5. Enter the dispatch loop ---- */
+    dispatch_loop(server);
+
+    /* ---- 6. Cleanup (unreachable in this example) ---- */
+    mx_ipc_server_endpoint_destroy(server);
+    mx_server_unregister(server);
+    mx_server_destroy(server);
+    free(server);
+    return 0;
+}
+\end{lstlisting}
+
+\subsection{Explanation}
+
+\begin{enumerate}
+  \item The server allocates and initialises a
+    \texttt{mx\_server\_t} object. The name must be unique across
+    all running servers.
+  \item It registers with the kernel so that other servers and the
+    manager can discover it.
+  \item IPC endpoints are created --- these are Mach ports backed by
+    Unix domain socket pairs. The endpoint port is the public
+    service port; the mgmt port is reserved for kernel management
+    messages (stop, restart, etc.).
+  \item The server sets its state to \texttt{READY} and sends a
+    notification to the kernel on its management port. The kernel
+    waits for this notification in \texttt{mx\_loader\_wait\_ready}
+    before considering the server fully started.
+  \item The dispatch loop calls \texttt{mach\_msg\_receive} to block
+    on the endpoint port, then dispatches messages to handler
+    functions. Handlers may produce reply messages that are sent
+    back to the original sender.
+\end{enumerate}
+
+\subsection{Building}
+
+To build a server, include \texttt{mxsi.h} and link with the MXSI
+library:
+
+\begin{lstlisting}[language=bash]
+cc -I/path/to/mxwl -c my_server.c -o my_server.o
+cc -o my_server my_server.o -lmxsi -lpthread
+\end{lstlisting}
+
+\subsection{Adding to the Bootstrap}
+
+Servers can be added to the boot sequence from a custom bootstrap
+module, or started manually from the MsWaiter prompt:
+
+\begin{lstlisting}[language=bash]
+mxwl> start /mach/servers/my-server
+\end{lstlisting}
+
+\section{API Reference}
+
+\subsection{mxwl/server.h --- Core Server Object}
+
+\begin{lstlisting}
+kern_return_t mx_server_init(mx_server_t *server, const char *name);
+void          mx_server_destroy(mx_server_t *server);
+
+kern_return_t mx_server_set_state(mx_server_t *server,
+                                   mx_server_state_t state);
+mx_server_state_t mx_server_get_state(const mx_server_t *server);
+
+const char *mx_server_state_string(mx_server_state_t state);
+const char *mx_server_caps_string(uint32_t caps, char *buf, size_t n);
+\end{lstlisting}
+
+\subsection{mxwl/registry.h --- Server Directory}
+
+\begin{lstlisting}
+kern_return_t  mx_registry_init(void);
+
+kern_return_t  mx_server_register(mx_server_t *server);
+kern_return_t  mx_server_unregister(mx_server_t *server);
+
+mx_server_t   *mx_server_lookup_id(mx_server_id_t server_id);
+mx_server_t   *mx_server_lookup_name(const char *name);
+mx_server_t   *mx_server_lookup_capability(mx_capability_t cap);
+mx_server_t   *mx_server_lookup_capability_any(uint32_t caps);
+
+kern_return_t  mx_server_find(const char *query, mx_server_t **out);
+
+int            mx_server_list(mx_server_info_t *buf, int max);
+int            mx_server_count(void);
+mx_server_t   *mx_server_first(void);
+mx_server_t   *mx_server_next(mx_server_t *current);
+\end{lstlisting}
+
+\subsection{mxwl/manager.h --- Lifecycle Control}
+
+\begin{lstlisting}
+kern_return_t mx_manager_init(void);
+void          mx_manager_shutdown(void);
+
+kern_return_t mx_server_start(mx_server_id_t server_id);
+kern_return_t mx_server_start_by_name(const char *name);
+kern_return_t mx_server_stop(mx_server_id_t server_id);
+kern_return_t mx_server_stop_by_name(const char *name);
+kern_return_t mx_server_restart(mx_server_id_t server_id);
+kern_return_t mx_server_restart_by_name(const char *name);
+
+kern_return_t mx_manager_start_server(mx_server_t *server);
+kern_return_t mx_manager_stop_server(mx_server_t *server);
+kern_return_t mx_manager_restart_server(mx_server_t *server);
+
+void          mx_manager_poll(void);
+kern_return_t mx_manager_handle_command(int argc, char **argv,
+                                         char *out, size_t out_size);
+\end{lstlisting}
+
+\subsection{mxwl/message.h --- Message Passing Primitives}
+
+\begin{lstlisting}
+typedef struct mx_message {
+    mach_port_t   sender;
+    mach_port_t   destination;
+    uint32_t      msg_id;
+    mx_msg_type_t type;
+    uint32_t      payload_size;
+    uint32_t      flags;
+    uint8_t       payload[];
+} mx_message_t;
+
+kern_return_t mx_msg_create(mx_message_t **out, mach_port_t sender,
+                             mach_port_t destination, uint32_t msg_id,
+                             mx_msg_type_t type, uint32_t flags,
+                             const void *payload, uint32_t payload_size);
+void          mx_msg_destroy(mx_message_t *msg);
+kern_return_t mx_msg_validate(const mx_message_t *msg);
+mx_message_t *mx_msg_dup(const mx_message_t *msg);
+uint32_t      mx_msg_total_size(const mx_message_t *msg);
+\end{lstlisting}
+
+\subsection{mxwl/ipc.h --- IPC Transport}
+
+\begin{lstlisting}
+kern_return_t mx_ipc_init(void);
+void          mx_ipc_shutdown(void);
+
+kern_return_t mx_ipc_server_endpoint_create(mx_server_t *server);
+void          mx_ipc_server_endpoint_destroy(mx_server_t *server);
+
+kern_return_t mx_server_send(mx_server_t *dest, mx_message_t *msg);
+kern_return_t mx_server_reply(mx_message_t *request,
+                               mx_message_t *reply);
+kern_return_t mx_server_broadcast(uint32_t caps_mask,
+                                   mx_message_t *msg);
+kern_return_t mx_server_notify(mx_server_t *server, uint32_t event,
+                                const void *data, uint32_t data_size);
+kern_return_t mx_server_rpc(mx_server_t *server, mx_message_t *request,
+                             mx_message_t **reply, int timeout_ms);
+
+void mx_ipc_set_monitor(mx_ipc_monitor_t monitor, void *context);
+void mx_ipc_poll(void);
+\end{lstlisting}
+
+\subsection{mxwl/loader.h --- Server Loader}
+
+\begin{lstlisting}
+kern_return_t mx_loader_init(void);
+kern_return_t mx_loader_load(mx_server_t *server,
+                              const char *exec_path);
+kern_return_t mx_loader_unload(mx_server_t *server);
+kern_return_t mx_loader_start(mx_server_t *server);
+kern_return_t mx_loader_stop(mx_server_t *server);
+kern_return_t mx_loader_setup_ipc(mx_server_t *server);
+kern_return_t mx_loader_wait_ready(mx_server_t *server,
+                                    int timeout_ms);
+\end{lstlisting}
+
+\subsection{mxwl/bootstrap.h --- Boot Sequence}
+
+\begin{lstlisting}
+kern_return_t mx_bootstrap_init(void);
+kern_return_t mx_bootstrap_configure(const char *boot_args);
+kern_return_t mx_bootstrap_start(void);
+kern_return_t mx_bootstrap_start_server(const char *name,
+                                         const char *path,
+                                         uint32_t capabilities);
+kern_return_t mx_bootstrap_launch_mswaiter(void);
+kern_return_t mx_bootstrap_sequence(void);
+const char   *mx_bootstrap_get_server_path(void);
+\end{lstlisting}
+
+\subsection{Data Structures}
+
+\subsubsection{\texttt{mx\_server\_t}}
+
+\begin{lstlisting}
+typedef struct mx_server {
+    mx_server_id_t    server_id;       /* unique numeric ID        */
+    char              name[64];        /* human-readable name      */
+    char              version[32];     /* server version string    */
+    char              path[256];       /* executable path          */
+    mx_server_state_t state;           /* current state            */
+    mxwl_task_t      *task;            /* associated kernel task   */
+    mxwl_thread_t    *thread;          /* associated kernel thread */
+    mach_port_t       endpoint;        /* public service port      */
+    mach_port_t       mgmt_port;       /* kernel management port   */
+    uint32_t          capabilities;    /* capability bitmask       */
+    uint32_t          flags;           /* MX_SERVER_* flags        */
+    int               argc;            /* argument count           */
+    char             *argv[64];        /* argument vector          */
+    uint32_t          permissions;     /* access permissions       */
+    int               restart_count;   /* number of restarts       */
+    int               restart_delay_ms;/* ms between restarts      */
+    mx_server_t      *next;            /* linked-list next pointer */
+} mx_server_t;
+\end{lstlisting}
+
+\subsubsection{\texttt{mx\_server\_info\_t}}
+
+\begin{lstlisting}
+typedef struct mx_server_info {
+    mx_server_id_t    server_id;
+    char              name[64];
+    char              version[32];
+    mx_server_state_t state;
+    uint32_t          capabilities;
+    uint32_t          flags;
+    mach_port_t       endpoint;
+    int               pid;
+} mx_server_info_t;
+\end{lstlisting}
+
+\section{Common Patterns}
+
+\subsection{Server Discovery}
+
+If a server needs to find another server at runtime, it can use the
+registry lookup functions. The capability-based lookup is preferred
+because it decouples the client from the server's name:
+
+\begin{lstlisting}
+mx_server_t *fs = mx_server_lookup_capability(MX_CAP_FILESYSTEM);
+if (fs) {
+    mx_message_t *req, *rep;
+    mx_msg_create(&req, my_port, fs->endpoint, ...);
+    mx_server_rpc(fs, req, &rep, 5000);
+}
+\end{lstlisting}
+
+\subsection{Handling Multiple Message Types}
+
+A common pattern is a dispatch table indexed by \texttt{msg\_id}:
+
+\begin{lstlisting}
+typedef kern_return_t (*handler_t)(mx_message_t *req,
+                                    mx_message_t **rep);
+
+typedef struct {
+    uint32_t  msg_id;
+    handler_t handler;
+} dispatch_entry_t;
+
+static dispatch_entry_t _handlers[] = {
+    { MSG_PING,     handle_ping     },
+    { MSG_LOOKUP,   handle_lookup   },
+    { MSG_SHUTDOWN, handle_shutdown },
+    { 0, NULL }
+};
+\end{lstlisting}
+
+\subsection{Robustness}
+
+Servers should handle the following scenarios gracefully:
+
+\begin{itemize}
+  \item \textbf{Invalid messages:} Validate \texttt{msg\_id},
+    \texttt{payload\_size}, and \texttt{type} before processing.
+    Return an error response or ignore the message.
+  \item \textbf{Timeouts:} When calling \texttt{mx\_server\_rpc},
+    always provide a reasonable timeout to avoid blocking
+    indefinitely.
+  \item \textbf{Shutdown:} Monitor the management port for a
+    shutdown notification from the kernel. On receipt, flush
+    pending work and exit cleanly.
+  \item \textbf{Resource leaks:} Every \texttt{mx\_msg\_create}
+    must be paired with a \texttt{mx\_msg\_destroy}. Every
+    registered server should be unregistered before destruction.
+\end{itemize}
+
+\section{Appendix: Return Codes}
+
+MXSI functions return \texttt{kern\_return\_t} values defined in
+\texttt{mach/mach\_types.h}:
+
+\begin{center}
+\begin{tabularx}{\textwidth}{|c|l|X|}
+\hline
+\textbf{Code} & \textbf{Constant} & \textbf{Meaning} \\
+\hline
+0  & \texttt{KERN\_SUCCESS}           & Operation completed. \\
+1  & \texttt{KERN\_INVALID\_ARGUMENT} & NULL pointer or bad parameter. \\
+2  & \texttt{KERN\_FAILURE}           & General failure. \\
+4  & \texttt{KERN\_INVALID\_OBJECT}   & Server or port not found. \\
+5  & \texttt{KERN\_NAME\_EXISTS}      & A server with this name exists. \\
+6  & \texttt{KERN\_ABORTED}           & Operation was aborted. \\
+7  & \texttt{KERN\_NOT\_RECEIVER}     & Target is not ready to receive. \\
+\hline
+\end{tabularx}
+\end{center}
+
+\end{document}

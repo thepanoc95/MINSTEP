@@ -1,5 +1,0 @@
-#ifndef MANGO_COMPAT_CPUS_H
-#define MANGO_COMPAT_CPUS_H
-#define NCPUS 1
-#undef MULTIPROCESSOR
-#endif

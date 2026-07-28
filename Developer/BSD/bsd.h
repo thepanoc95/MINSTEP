@@ -16,10 +16,10 @@
 
 #include <objc/objc.h>
 
-#include "../../Kernel/mango/mach/mach_types.h"
-#include "../../Kernel/mango/mach/mach_msg.h"
-#include "../../Kernel/mango/mach/mach_port.h"
-#include "../../Kernel/mango/ipc/ipc.h"
+#include "../../Kernel/mxwl/mach/mach_types.h"
+#include "../../Kernel/mxwl/mach/mach_msg.h"
+#include "../../Kernel/mxwl/mach/mach_port.h"
+#include "../../Kernel/mxwl/ipc/ipc.h"
 
 #include <sys/types.h>
 #include <sys/time.h>

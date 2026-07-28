@@ -1,0 +1,5 @@
+#ifndef MXWL_COMPAT_CPUS_H
+#define MXWL_COMPAT_CPUS_H
+#define NCPUS 1
+#undef MULTIPROCESSOR
+#endif

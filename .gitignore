@@ -18,3 +18,7 @@ boot
 *.tar
 *.VM
 build/
+objcc
+*.a
+*.so*
+*.app

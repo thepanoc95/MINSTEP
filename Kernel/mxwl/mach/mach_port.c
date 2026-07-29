@@ -20,9 +20,6 @@
  *  Global port table (extern declared in MaxxwellPort.h)
  * ----------------------------------------------------------------------- */
 
-extern mach_port_object_t mxwl_port_table[MACH_PORT_TABLE_SIZE];
-extern int                mxwl_port_table_count;
-
 /* -----------------------------------------------------------------------
  *  mach_port_allocate
  *

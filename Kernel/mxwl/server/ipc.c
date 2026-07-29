@@ -1,6 +1,7 @@
 #include "ipc.h"
 #include "registry.h"
 #include "../mach/klog.h"
+#include "../ipc/ipc.h"
 #include "../mach/mach_port.h"
 #include "../libkern/libkern.h"
 

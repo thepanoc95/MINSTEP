@@ -3,6 +3,7 @@
 #include "../libkern/libkern.h"
 
 #include <string.h>
+#include <stdlib.h>
 
 static mx_server_t *_registry = NULL;
 static int          _registry_count = 0;

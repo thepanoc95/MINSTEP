@@ -7,7 +7,7 @@
 #define MX_MONITOR_NAME      "MsWaiter"
 #define MX_MONITOR_VERSION   "2.0"
 #define MX_MONITOR_KVER      "0.1.12-rc1"
-#define MX_MONITOR_PROMPT    "mxwl> "
+#define MX_MONITOR_PROMPT    "----> "
 #define MX_MONITOR_MAX_LINE  512
 #define MX_MONITOR_MAX_ARGS  64
 #define MX_MONITOR_HISTORY   64

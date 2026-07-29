@@ -228,8 +228,8 @@ mxwl_task_t *mxwl_current_task = NULL;
 
     if (access(init_path, X_OK) != 0) {
         klog_warn("%s not found or not executable\n", init_path);
-        klog_info("falling back to /sbin/init\n");
-        strncpy(init_path, "/sbin/init", sizeof(init_path) - 1);
+        klog_info("no init available, staying in-kernel\n");
+        return KERN_FAILURE;
     }
 
     mxwl_task_t *init_task = NULL;

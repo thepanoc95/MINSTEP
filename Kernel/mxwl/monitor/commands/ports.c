@@ -12,8 +12,8 @@ static kern_return_t _ports_handler(int argc, char **argv,
                             "IPC Ports:\n");
 
     int shown = 0;
-    for (int i = 0; i < _mxwl_port_table_count; i++) {
-        mach_port_object_t *p = &_mxwl_port_table[i];
+    for (int i = 0; i < mxwl_port_table_count; i++) {
+        mach_port_object_t *p = &mxwl_port_table[i];
         if (p->in_use) {
             pos += libkern_snprintf(out + pos, out_size - pos,
                                     "  [%d] name=%d  refs=%d  fd=%d  queue=%d\n",

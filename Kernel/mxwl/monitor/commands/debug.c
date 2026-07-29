@@ -1,6 +1,7 @@
 #include "../monitor.h"
 #include "debug.h"
 #include "../../mach/klog.h"
+#include "../../libkern/libkern.h"
 
 static kern_return_t _debug_handler(int argc, char **argv,
                                      char *out, size_t out_size)
@@ -38,7 +39,7 @@ static kern_return_t _panic_handler(int argc, char **argv,
     if (argc > 1)
         msg = argv[1];
 
-    mx_panic(msg);
+    libkern_panic("%s", msg);
     return KERN_ABORTED;
 }
 

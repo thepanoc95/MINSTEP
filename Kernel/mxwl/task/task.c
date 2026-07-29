@@ -220,8 +220,8 @@ kern_return_t mxwl_launch_init(const char *userfs_root, const char *init_path)
 
         if (!kal_can_exec(resolved_path)) {
             klog_warn("%s not found or not executable\n", resolved_path);
-            klog_info("falling back to /sbin/init\n");
-            strncpy(resolved_path, "/sbin/init", sizeof(resolved_path) - 1);
+            klog_info("no init available, staying in-kernel\n");
+            return KERN_FAILURE;
         }
     }
 

@@ -66,7 +66,7 @@
 }
 
 - (void)banner {
-    klog_info("MINSTEP v%s -- Maxxwell Nanokernel\n", MXWL_KERNEL_VERSION);
+    klog_info("Starting........................\n", MXWL_KERNEL_VERSION);
     klog_info("Copyright (c) 2026 Miguel V. Mesquita. BSD License.\n");
 }
 
@@ -311,24 +311,25 @@ void mxwl_kernel_main(const char *init_path)
             resolved[sizeof(resolved) - 1] = '\0';
         } else {
             snprintf(resolved, sizeof(resolved), "%s/private/init", root);
-            if (access(resolved, X_OK) != 0) {
-                klog_warn("%s not executable, falling back to /sbin/init\n", resolved);
-                strncpy(resolved, "/sbin/init", sizeof(resolved) - 1);
-            }
         }
 
-        pid_t pid = fork();
-        if (pid < 0) {
-            klog_err("fork failed: %s\n", strerror(errno));
-        } else if (pid == 0) {
-            setenv("USERFSROOT", root, 1);
-            execl(resolved, resolved, (char *)NULL);
-            klog_err("exec failed: %s\n", strerror(errno));
-            ((void(*)(int))_exit)(1);
+        if (access(resolved, X_OK) != 0) {
+            klog_warn("%s not executable\n", resolved);
+            klog_info("no init available, staying in-kernel\n");
         } else {
-            _shared_kernel->_init_pid = pid;
-            klog_info("init started (pid %d)\n", pid);
-            have_init = 1;
+            pid_t pid = fork();
+            if (pid < 0) {
+                klog_err("fork failed: %s\n", strerror(errno));
+            } else if (pid == 0) {
+                setenv("USERFSROOT", root, 1);
+                execl(resolved, resolved, (char *)NULL);
+                klog_err("exec failed: %s\n", strerror(errno));
+                ((void(*)(int))_exit)(1);
+            } else {
+                _shared_kernel->_init_pid = pid;
+                klog_info("init started (pid %d)\n", pid);
+                have_init = 1;
+            }
         }
     } else {
         klog_info("single-user mode, skipping init\n");

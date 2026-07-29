@@ -142,7 +142,7 @@ kern_return_t mxwl_kernel_task_init(void);
 
 /* Launch the init process.
  * If init_path is non-NULL, use it directly.
- * Otherwise search $USERFSROOT/private/init, then /sbin/init. */
+ * Otherwise search $USERFSROOT/private/init. */
 kern_return_t mxwl_launch_init(const char *userfs_root, const char *init_path);
 
 #ifdef __cplusplus

@@ -53,8 +53,8 @@ typedef struct mach_port_object {
  *  Port table
  * ----------------------------------------------------------------------- */
 
-extern mach_port_object_t _mxwl_port_table[MACH_PORT_TABLE_SIZE];
-extern int                _mxwl_port_table_count;
+extern mach_port_object_t mxwl_port_table[MACH_PORT_TABLE_SIZE];
+extern int                mxwl_port_table_count;
 
 /* -----------------------------------------------------------------------
  *  Port API
